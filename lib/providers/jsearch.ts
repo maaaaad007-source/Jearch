@@ -64,13 +64,24 @@ export function mapJSearchJob(job: JSearchJob): JobPost {
   };
 }
 
+/** Loose company match — "Acme" should match "Acme Corp" and "ACME, Inc.". */
+function matchesCompany(job: JobPost, company: string): boolean {
+  const needle = company.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!needle) return true;
+  return job.companyName.toLowerCase().replace(/[^a-z0-9]/g, "").includes(needle);
+}
+
 export async function searchJSearch(
   params: SearchParams,
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<JobPost[]> {
+  // JSearch takes a single free-text query with no employer filter, so the
+  // company name is folded into the query and the results are filtered after.
+  const query = [params.designation, params.company].filter(Boolean).join(" ").trim();
+
   const url = new URL(ENDPOINT);
-  url.searchParams.set("query", params.designation);
+  url.searchParams.set("query", query);
   url.searchParams.set("country", params.country.toLowerCase());
   url.searchParams.set("page", String(params.page ?? 1));
   url.searchParams.set("num_pages", "1");
@@ -93,5 +104,7 @@ export async function searchJSearch(
   }
 
   const payload = (await response.json()) as { data?: JSearchJob[] };
-  return (payload.data ?? []).map(mapJSearchJob);
+  const jobs = (payload.data ?? []).map(mapJSearchJob);
+
+  return params.company ? jobs.filter((job) => matchesCompany(job, params.company!)) : jobs;
 }

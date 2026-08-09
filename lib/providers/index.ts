@@ -9,7 +9,7 @@ import {
 import { scoreTitle } from "@/lib/providers/constants";
 import { demoContacts, demoJobs } from "@/lib/providers/demo";
 import { searchJSearch } from "@/lib/providers/jsearch";
-import { searchTheirStack } from "@/lib/providers/theirstack";
+import { PAGE_SIZE as THEIRSTACK_PAGE_SIZE, searchTheirStack } from "@/lib/providers/theirstack";
 import { searchApolloContacts } from "@/lib/providers/apollo";
 import { searchHunterContacts } from "@/lib/providers/hunter";
 
@@ -17,6 +17,8 @@ export interface JobSearchResult {
   jobs: JobPost[];
   provider: JobProvider;
   demo: boolean;
+  /** Whether asking for the next page is likely to return anything. */
+  hasMore: boolean;
 }
 
 export interface ContactSearchResult {
@@ -30,15 +32,18 @@ export async function findJobs(params: SearchParams, signal?: AbortSignal): Prom
 
   if (provider === "jsearch") {
     const jobs = await searchJSearch(params, serverEnv.jsearchKey!, signal);
-    return { jobs, provider, demo: false };
+    // JSearch reports no total, so a non-empty page is the only signal that
+    // another one might exist.
+    return { jobs, provider, demo: false, hasMore: jobs.length > 0 };
   }
 
   if (provider === "theirstack") {
     const jobs = await searchTheirStack(params, serverEnv.theirstackKey!, signal);
-    return { jobs, provider, demo: false };
+    return { jobs, provider, demo: false, hasMore: jobs.length >= THEIRSTACK_PAGE_SIZE };
   }
 
-  return { jobs: demoJobs(params), provider: "demo", demo: true };
+  const { jobs, hasMore } = demoJobs(params);
+  return { jobs, provider: "demo", demo: true, hasMore };
 }
 
 /**

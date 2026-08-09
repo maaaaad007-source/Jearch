@@ -7,8 +7,12 @@ import type { ContactsApiResponse } from "@/types";
 
 export const runtime = "nodejs";
 
-/** Enrichment calls cost credits per domain, so a single request is capped. */
-const MAX_DOMAINS = 12;
+/**
+ * Enrichment calls cost credits per domain, so a single request is capped. The
+ * client only ever sends domains it has not already enriched, so paging through
+ * results stays within one cap per page rather than re-billing earlier pages.
+ */
+const MAX_DOMAINS = 25;
 
 const bodySchema = z.object({
   companies: z

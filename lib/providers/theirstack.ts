@@ -4,6 +4,8 @@ import { normalizeDomain } from "@/lib/utils";
 
 const ENDPOINT = "https://api.theirstack.com/v1/jobs/search";
 
+export const PAGE_SIZE = 25;
+
 interface TheirStackJob {
   id?: number | string;
   job_title?: string;
@@ -85,8 +87,11 @@ export async function searchTheirStack(
     },
     body: JSON.stringify({
       page: Math.max(0, (params.page ?? 1) - 1),
-      limit: 20,
-      job_title_or: [params.designation],
+      limit: PAGE_SIZE,
+      // TheirStack rejects empty filter arrays, so each one is only sent when
+      // the user actually supplied that field.
+      ...(params.designation ? { job_title_or: [params.designation] } : {}),
+      ...(params.company ? { company_name_partial_match_or: [params.company] } : {}),
       job_country_code_or: [params.country.toUpperCase()],
       posted_at_max_age_days: 30,
       blur_company_data: false,

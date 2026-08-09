@@ -5,10 +5,17 @@ import { create } from "zustand";
 import { DEFAULT_COUNTRY } from "@/lib/countries";
 import type { ContactPerson, ContactsApiResponse, JobWithContact, JobsApiResponse } from "@/types";
 
-type SearchStatus = "idle" | "loading-jobs" | "enriching" | "success" | "error";
+type SearchStatus = "idle" | "loading-jobs" | "enriching" | "loading-more" | "success" | "error";
+
+interface Query {
+  designation: string;
+  company: string;
+  country: string;
+}
 
 interface SearchState {
   designation: string;
+  company: string;
   country: string;
   status: SearchStatus;
   error: string | null;
@@ -17,11 +24,15 @@ interface SearchState {
   contactProvider: string | null;
   /** True when either side of the pipeline fell back to seeded sample data. */
   demo: boolean;
-  lastQuery: { designation: string; country: string } | null;
+  lastQuery: Query | null;
+  page: number;
+  hasMore: boolean;
 
   setDesignation: (value: string) => void;
+  setCompany: (value: string) => void;
   setCountry: (value: string) => void;
-  search: (params?: { designation?: string; country?: string }) => Promise<void>;
+  search: () => Promise<void>;
+  loadMore: () => Promise<void>;
   reset: () => void;
 }
 
@@ -34,6 +45,62 @@ async function readError(response: Response, fallback: string): Promise<string> 
   }
 }
 
+async function fetchJobs(query: Query, page: number): Promise<JobsApiResponse> {
+  const params = new URLSearchParams({ country: query.country, page: String(page) });
+  if (query.designation) params.set("designation", query.designation);
+  if (query.company) params.set("company", query.company);
+
+  const response = await fetch(`/api/jobs?${params.toString()}`);
+  if (!response.ok) throw new Error(await readError(response, "Job search failed"));
+  return (await response.json()) as JobsApiResponse;
+}
+
+async function fetchContacts(
+  companies: Array<{ domain: string; companyName: string }>,
+): Promise<ContactsApiResponse> {
+  const response = await fetch("/api/contacts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ companies }),
+  });
+  if (!response.ok) throw new Error(await readError(response, "Contact enrichment failed"));
+  return (await response.json()) as ContactsApiResponse;
+}
+
+function toPendingResults(payload: JobsApiResponse): JobWithContact[] {
+  return payload.jobs.map((job) => ({
+    job,
+    contact: null,
+    alternateContacts: [],
+    contactError: null,
+  }));
+}
+
+const NO_DOMAIN = "No company website on this posting, so we could not look up contacts.";
+const NO_CONTACT = "No decision maker found for this company.";
+
+function applyContacts(
+  results: JobWithContact[],
+  contactsByDomain: Record<string, ContactPerson[]>,
+): JobWithContact[] {
+  return results.map((result) => {
+    const domain = result.job.companyDomain;
+    if (!domain) return { ...result, contactError: NO_DOMAIN };
+
+    // A domain missing from the response was not part of this batch — leave
+    // whatever the card already had rather than blanking an earlier result.
+    const contacts = contactsByDomain[domain];
+    if (!contacts) return result;
+
+    return {
+      ...result,
+      contact: contacts[0] ?? null,
+      alternateContacts: contacts.slice(1),
+      contactError: contacts.length > 0 ? null : NO_CONTACT,
+    };
+  });
+}
+
 /**
  * The search pipeline runs in two visible phases so the grid can paint job
  * cards as soon as the board responds, then fill in decision-maker panels when
@@ -41,6 +108,7 @@ async function readError(response: Response, fallback: string): Promise<string> 
  */
 export const useSearchStore = create<SearchState>((set, get) => ({
   designation: "",
+  company: "",
   country: DEFAULT_COUNTRY,
   status: "idle",
   error: null,
@@ -49,16 +117,25 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   contactProvider: null,
   demo: false,
   lastQuery: null,
+  page: 1,
+  hasMore: false,
 
   setDesignation: (value) => set({ designation: value }),
+  setCompany: (value) => set({ company: value }),
   setCountry: (value) => set({ country: value }),
 
-  search: async (params) => {
-    const designation = (params?.designation ?? get().designation).trim();
-    const country = params?.country ?? get().country;
+  search: async () => {
+    const query: Query = {
+      designation: get().designation.trim(),
+      company: get().company.trim(),
+      country: get().country,
+    };
 
-    if (designation.length < 2) {
-      set({ status: "error", error: "Enter a job title with at least 2 characters." });
+    if (query.designation.length < 2 && query.company.length < 2) {
+      set({
+        status: "error",
+        error: "Enter a job title or a company name (at least 2 characters).",
+      });
       return;
     }
 
@@ -66,109 +143,67 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       status: "loading-jobs",
       error: null,
       results: [],
-      designation,
-      country,
-      lastQuery: { designation, country },
+      page: 1,
+      hasMore: false,
+      lastQuery: query,
+      contactProvider: null,
     });
 
-    let jobsPayload: JobsApiResponse;
+    let payload: JobsApiResponse;
     try {
-      const query = new URLSearchParams({ designation, country });
-      const response = await fetch(`/api/jobs?${query.toString()}`);
-      if (!response.ok) {
-        throw new Error(await readError(response, "Job search failed"));
-      }
-      jobsPayload = (await response.json()) as JobsApiResponse;
+      payload = await fetchJobs(query, 1);
     } catch (error) {
-      set({
-        status: "error",
-        error: error instanceof Error ? error.message : "Job search failed",
-      });
+      set({ status: "error", error: error instanceof Error ? error.message : "Job search failed" });
       return;
     }
 
-    const baseResults: JobWithContact[] = jobsPayload.jobs.map((job) => ({
-      job,
-      contact: null,
-      alternateContacts: [],
-      contactError: null,
-    }));
-
-    if (baseResults.length === 0) {
-      set({
-        status: "success",
-        results: [],
-        jobProvider: jobsPayload.provider,
-        demo: jobsPayload.demo,
-      });
-      return;
-    }
+    const results = toPendingResults(payload);
 
     set({
-      status: "enriching",
-      results: baseResults,
-      jobProvider: jobsPayload.provider,
-      demo: jobsPayload.demo,
+      status: results.length > 0 ? "enriching" : "success",
+      results,
+      jobProvider: payload.provider,
+      demo: payload.demo,
+      hasMore: payload.hasMore,
     });
 
-    const companies = jobsPayload.jobs
-      .filter((job) => job.companyDomain)
-      .map((job) => ({ domain: job.companyDomain as string, companyName: job.companyName }));
+    if (results.length > 0) await enrich(set, get, results, payload.demo);
+  },
 
-    if (companies.length === 0) {
+  loadMore: async () => {
+    const query = get().lastQuery;
+    const status = get().status;
+    if (!query || !get().hasMore || status === "loading-more" || status === "loading-jobs") return;
+
+    const nextPage = get().page + 1;
+    set({ status: "loading-more", error: null });
+
+    let payload: JobsApiResponse;
+    try {
+      payload = await fetchJobs(query, nextPage);
+    } catch (error) {
       set({
         status: "success",
-        results: baseResults.map((result) => ({
-          ...result,
-          contactError: "No company website on this posting, so we could not look up contacts.",
-        })),
+        error: error instanceof Error ? error.message : "Could not load more results",
       });
       return;
     }
 
-    try {
-      const response = await fetch("/api/contacts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companies }),
-      });
-      if (!response.ok) {
-        throw new Error(await readError(response, "Contact enrichment failed"));
-      }
+    // Boards repeat postings across pages often enough that deduping by id is
+    // worth the two lines.
+    const seen = new Set(get().results.map((result) => result.job.id));
+    const fresh = toPendingResults(payload).filter((result) => !seen.has(result.job.id));
+    const combined = [...get().results, ...fresh];
 
-      const payload = (await response.json()) as ContactsApiResponse;
+    set({
+      status: fresh.length > 0 ? "enriching" : "success",
+      results: combined,
+      page: nextPage,
+      hasMore: payload.hasMore && fresh.length > 0,
+      demo: get().demo || payload.demo,
+    });
 
-      // Only mark the run as demo data if the job side was already synthetic —
-      // real postings with demo contacts would be misleading in the banner.
-      set({
-        status: "success",
-        contactProvider: payload.provider,
-        demo: jobsPayload.demo || payload.demo,
-        results: baseResults.map((result) => {
-          const domain = result.job.companyDomain;
-          const contacts: ContactPerson[] = domain ? (payload.contactsByDomain[domain] ?? []) : [];
-
-          return {
-            ...result,
-            contact: contacts[0] ?? null,
-            alternateContacts: contacts.slice(1),
-            contactError:
-              contacts.length > 0
-                ? null
-                : domain
-                  ? "No decision maker found for this company."
-                  : "No company website on this posting, so we could not look up contacts.",
-          };
-        }),
-      });
-    } catch (error) {
-      // Enrichment is additive — a failure leaves the job cards intact.
-      const message = error instanceof Error ? error.message : "Contact enrichment failed";
-      set({
-        status: "success",
-        results: baseResults.map((result) => ({ ...result, contactError: message })),
-      });
-    }
+    if (fresh.length > 0) await enrich(set, get, fresh, payload.demo);
   },
 
   reset: () =>
@@ -180,5 +215,63 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       contactProvider: null,
       demo: false,
       lastQuery: null,
+      page: 1,
+      hasMore: false,
     }),
 }));
+
+type Setter = (partial: Partial<SearchState>) => void;
+type Getter = () => SearchState;
+
+/**
+ * Enrich a slice of results in place. Only the domains in `pending` are sent,
+ * so paging never re-bills a domain that was already looked up.
+ */
+async function enrich(set: Setter, get: Getter, pending: JobWithContact[], jobsAreDemo: boolean) {
+  const alreadyEnriched = new Set(
+    get()
+      .results.filter((result) => result.contact || result.contactError)
+      .map((result) => result.job.companyDomain),
+  );
+
+  const companies = pending
+    .filter((result) => result.job.companyDomain && !alreadyEnriched.has(result.job.companyDomain))
+    .map((result) => ({
+      domain: result.job.companyDomain as string,
+      companyName: result.job.companyName,
+    }));
+
+  if (companies.length === 0) {
+    set({
+      status: "success",
+      results: get().results.map((result) =>
+        result.job.companyDomain ? result : { ...result, contactError: NO_DOMAIN },
+      ),
+    });
+    return;
+  }
+
+  try {
+    const payload = await fetchContacts(companies);
+
+    set({
+      status: "success",
+      contactProvider: payload.provider,
+      // Only flag the run as demo when the job side was synthetic too — real
+      // postings with demo contacts would make the banner misleading.
+      demo: jobsAreDemo || payload.demo,
+      results: applyContacts(get().results, payload.contactsByDomain),
+    });
+  } catch (error) {
+    // Enrichment is additive — a failure leaves the job cards intact.
+    const message = error instanceof Error ? error.message : "Contact enrichment failed";
+    const pendingIds = new Set(pending.map((result) => result.job.id));
+
+    set({
+      status: "success",
+      results: get().results.map((result) =>
+        pendingIds.has(result.job.id) && !result.contact ? { ...result, contactError: message } : result,
+      ),
+    });
+  }
+}

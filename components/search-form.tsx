@@ -4,25 +4,20 @@ import * as React from "react";
 import { Loader2, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { CountrySelect } from "@/components/country-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { COUNTRIES } from "@/lib/countries";
 import { suggestTitles } from "@/lib/job-titles";
 import { cn } from "@/lib/utils";
 import { useSearchStore } from "@/store/use-search-store";
 
 export function SearchForm() {
   const designation = useSearchStore((s) => s.designation);
+  const company = useSearchStore((s) => s.company);
   const country = useSearchStore((s) => s.country);
   const status = useSearchStore((s) => s.status);
   const setDesignation = useSearchStore((s) => s.setDesignation);
+  const setCompany = useSearchStore((s) => s.setCompany);
   const setCountry = useSearchStore((s) => s.setCountry);
   const search = useSearchStore((s) => s.search);
 
@@ -73,9 +68,9 @@ export function SearchForm() {
   return (
     <form
       onSubmit={onSubmit}
-      className="grid gap-4 rounded-lg border border-border bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5 md:grid-cols-[minmax(0,1fr)_16rem_auto] md:items-end"
+      className="grid gap-4 rounded-lg border border-border bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5 md:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_15rem_auto] lg:items-end"
     >
-      <div ref={containerRef} className="relative grid gap-2">
+      <div ref={containerRef} className="relative grid grid-cols-1 gap-2">
         <Label htmlFor="designation">Job title / designation</Label>
         <Input
           id="designation"
@@ -122,27 +117,25 @@ export function SearchForm() {
         )}
       </div>
 
-      <div className="grid gap-2">
-        <Label htmlFor="country">Country</Label>
-        <Select value={country} onValueChange={setCountry}>
-          <SelectTrigger id="country" aria-label="Country">
-            <SelectValue placeholder="Select a country" />
-          </SelectTrigger>
-          <SelectContent>
-            {COUNTRIES.map((item) => (
-              <SelectItem key={item.code} value={item.code}>
-                <span className="flex items-center gap-2">
-                  <span aria-hidden>{item.flag}</span>
-                  <span>{item.name}</span>
-                  <span className="text-xs text-muted-foreground">{item.code}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-1 gap-2">
+        <Label htmlFor="company">
+          Company <span className="font-normal text-muted-foreground">(optional)</span>
+        </Label>
+        <Input
+          id="company"
+          value={company}
+          placeholder="e.g. Spotify"
+          autoComplete="off"
+          onChange={(event) => setCompany(event.target.value)}
+        />
       </div>
 
-      <Button type="submit" size="lg" disabled={busy} className="w-full md:w-auto">
+      <div className="grid grid-cols-1 gap-2">
+        <Label htmlFor="country">Country</Label>
+        <CountrySelect id="country" value={country} onChange={setCountry} />
+      </div>
+
+      <Button type="submit" size="lg" disabled={busy} className="w-full lg:w-auto">
         {busy ? <Loader2 className="animate-spin" /> : <Search />}
         {busy ? "Searching…" : "Find Jobs & Contacts"}
       </Button>

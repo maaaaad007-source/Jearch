@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertTriangle, FlaskConical, SearchX, Target } from "lucide-react";
+import { AlertTriangle, FlaskConical, Loader2, Plus, SearchX, Target } from "lucide-react";
 
 import { JobCard } from "@/components/job-card";
 import { ResultsSkeletonGrid } from "@/components/job-card-skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { countryName } from "@/lib/countries";
 import { useSearchStore } from "@/store/use-search-store";
 
@@ -16,6 +17,15 @@ const PROVIDER_LABELS: Record<string, string> = {
   demo: "Demo data",
 };
 
+/** "Growth Marketer at Spotify in Germany" — whichever parts were filled in. */
+function describeQuery(query: { designation: string; company: string; country: string }): string {
+  const parts: string[] = [];
+  if (query.designation) parts.push(`“${query.designation}”`);
+  if (query.company) parts.push(`at ${query.company}`);
+  parts.push(`in ${countryName(query.country)}`);
+  return parts.join(" ");
+}
+
 export function ResultsGrid() {
   const status = useSearchStore((s) => s.status);
   const error = useSearchStore((s) => s.error);
@@ -24,13 +34,15 @@ export function ResultsGrid() {
   const jobProvider = useSearchStore((s) => s.jobProvider);
   const contactProvider = useSearchStore((s) => s.contactProvider);
   const lastQuery = useSearchStore((s) => s.lastQuery);
+  const hasMore = useSearchStore((s) => s.hasMore);
+  const loadMore = useSearchStore((s) => s.loadMore);
 
   if (status === "idle") {
     return (
       <EmptyState
         icon={<Target className="size-6" />}
         title="Search a role to see who is hiring for it"
-        description="Enter a job title and country. You get the live postings plus the recruiter or hiring manager behind each one — name, LinkedIn, work email and phone where available."
+        description="Enter a job title, a company, or both. You get the live postings plus the recruiter or hiring manager behind each one — name, LinkedIn, work email and phone where available."
       />
     );
   }
@@ -56,7 +68,7 @@ export function ResultsGrid() {
         title="No postings matched that search"
         description={
           lastQuery
-            ? `Nothing active for “${lastQuery.designation}” in ${countryName(lastQuery.country)} right now. Try a broader title or a different country.`
+            ? `Nothing active for ${describeQuery(lastQuery)} right now. Try a broader title, drop the company filter, or pick another country.`
             : "Try a broader title or a different country."
         }
       />
@@ -64,6 +76,7 @@ export function ResultsGrid() {
   }
 
   const enriching = status === "enriching";
+  const loadingMore = status === "loading-more";
 
   return (
     <div className="grid gap-4">
@@ -71,7 +84,7 @@ export function ResultsGrid() {
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">{results.length}</span> opening
           {results.length === 1 ? "" : "s"}
-          {lastQuery ? ` for “${lastQuery.designation}” in ${countryName(lastQuery.country)}` : ""}
+          {lastQuery ? ` for ${describeQuery(lastQuery)}` : ""}
           {enriching ? " · finding decision makers…" : ""}
         </p>
 
@@ -89,11 +102,26 @@ export function ResultsGrid() {
         </div>
       </div>
 
+      {error && (
+        <p className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          {error}
+        </p>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {results.map((result) => (
-          <JobCard key={result.job.id} result={result} enriching={enriching} />
+          <JobCard key={result.job.id} result={result} enriching={enriching || loadingMore} />
         ))}
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <Button variant="outline" size="lg" onClick={() => void loadMore()} disabled={loadingMore}>
+            {loadingMore ? <Loader2 className="animate-spin" /> : <Plus />}
+            {loadingMore ? "Loading…" : "Load more results"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

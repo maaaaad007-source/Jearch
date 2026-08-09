@@ -1,5 +1,6 @@
 import type { ContactPerson, JobPost, SearchParams, WorkType } from "@/types";
 import { countryName } from "@/lib/countries";
+import { JOB_TITLE_SUGGESTIONS } from "@/lib/job-titles";
 import { summarizeResponsibilities } from "@/lib/text";
 
 /**
@@ -46,7 +47,38 @@ const COMPANIES = [
   { name: "Cobalt Grid", domain: "cobaltgrid.example" },
   { name: "Fernway Robotics", domain: "fernway.example" },
   { name: "Atlas Provisions", domain: "atlasprovisions.example" },
+  { name: "Marlowe Technologies", domain: "marlowetech.example" },
+  { name: "Pinegate Software", domain: "pinegate.example" },
+  { name: "Solstice Media", domain: "solsticemedia.example" },
+  { name: "Bramble Bio", domain: "bramblebio.example" },
+  { name: "Quarry Point", domain: "quarrypoint.example" },
+  { name: "Halden Freight", domain: "haldenfreight.example" },
+  { name: "Verano Retail", domain: "veranoretail.example" },
+  { name: "Thistle Energy", domain: "thistleenergy.example" },
+  { name: "Copperfield Bank", domain: "copperfieldbank.example" },
+  { name: "Askew Interactive", domain: "askewinteractive.example" },
+  { name: "Ridgeway Mobility", domain: "ridgewaymobility.example" },
+  { name: "Palmyra Foods", domain: "palmyrafoods.example" },
+  { name: "Wrenfield Insurance", domain: "wrenfield.example" },
+  { name: "Juniper Signal", domain: "junipersignal.example" },
+  { name: "Ostrava Works", domain: "ostravaworks.example" },
+  { name: "Bellweather AI", domain: "bellweatherai.example" },
+  { name: "Tidemark Logistics", domain: "tidemark-logistics.example" },
+  { name: "Granite & Vine", domain: "graniteandvine.example" },
+  { name: "Sundial Health", domain: "sundialhealth.example" },
+  { name: "Norbury Studios", domain: "norburystudios.example" },
+  { name: "Calder Instruments", domain: "calderinstruments.example" },
+  { name: "Ember Lane", domain: "emberlane.example" },
+  { name: "Foxglove Labs", domain: "foxglovelabs.example" },
+  { name: "Aurelia Systems", domain: "aureliasystems.example" },
 ];
+
+/** Jobs returned per demo page, and how many pages the generator will serve. */
+const DEMO_PAGE_SIZE = 12;
+const DEMO_MAX_PAGES = 4;
+
+/** Openings generated per employer when a company filter narrows the pool. */
+const POSTINGS_PER_COMPANY = 5;
 
 const CITIES: Record<string, string[]> = {
   US: ["San Francisco", "New York", "Austin", "Seattle", "Boston", "Denver"],
@@ -146,25 +178,99 @@ function pick<T>(rand: () => number, list: T[]): T {
   return list[Math.floor(rand() * list.length)];
 }
 
-export function demoJobs(params: SearchParams): JobPost[] {
-  const rand = mulberry32(hashSeed(`${params.designation.toLowerCase()}|${params.country}|${params.page ?? 1}`));
+/** Fisher-Yates — a random sort comparator is engine-dependent, this is not. */
+function shuffle<T>(list: T[], rand: () => number): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+const SENIORITY = ["", "Senior ", "Lead ", "Staff ", "Junior "];
+
+/**
+ * Title for one demo listing.
+ *
+ * With a designation the seniority is varied per slot, so a company showing
+ * several openings reads like a real board rather than the same row repeated.
+ * Without one — a company-only search — a role is drawn from the suggestion
+ * corpus instead of inventing a placeholder like "Specialist".
+ */
+function titleFor(designation: string, slot: number, rand: () => number): string {
+  if (designation) {
+    return `${SENIORITY[slot % SENIORITY.length]}${designation}`.trim();
+  }
+  return pick(rand, JOB_TITLE_SUGGESTIONS);
+}
+
+function slugToDomain(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${slug || "company"}.example`;
+}
+
+export interface DemoJobsResult {
+  jobs: JobPost[];
+  hasMore: boolean;
+}
+
+export function demoJobs(params: SearchParams): DemoJobsResult {
+  const page = params.page ?? 1;
+  if (page > DEMO_MAX_PAGES) return { jobs: [], hasMore: false };
+
   const country = params.country.toUpperCase();
+  const seedBase = `${params.designation.toLowerCase()}|${country}|${params.company ?? ""}`;
+  const rand = mulberry32(hashSeed(`${seedBase}|${page}`));
   const cities = CITIES[country] ?? FALLBACK_CITIES;
   const currency = CURRENCIES[country] ?? (EUROZONE.has(country) ? "EUR" : "USD");
-  const count = 8 + Math.floor(rand() * 3);
 
-  const companies = [...COMPANIES].sort(() => rand() - 0.5).slice(0, count);
+  // A company filter narrows to matching sample employers. If the name matches
+  // nothing in the sample set, one is synthesized under that name so the filter
+  // visibly does something rather than returning a blank screen.
+  let pool = COMPANIES;
+  if (params.company) {
+    const needle = params.company.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const matched = COMPANIES.filter((c) =>
+      c.name.toLowerCase().replace(/[^a-z0-9]/g, "").includes(needle),
+    );
+    pool = matched.length > 0 ? matched : [{ name: params.company, domain: slugToDomain(params.company) }];
+  }
 
-  return companies.map((company, index) => {
+  // Walk the shuffled roster page by page so "load more" yields new listings,
+  // and run out honestly once it is exhausted. The shuffle is seeded without
+  // the page number so every page walks the same ordering.
+  const shuffled = shuffle(pool, mulberry32(hashSeed(seedBase)));
+
+  // A filtered-down pool would otherwise yield a single lonely card, so each
+  // matching employer gets a handful of openings — closer to what a real
+  // company job board looks like.
+  const rosterRand = mulberry32(hashSeed(`${seedBase}|roster`));
+  const perCompany = params.company ? POSTINGS_PER_COMPANY : 1;
+  const roster = shuffled.flatMap((company) =>
+    Array.from({ length: perCompany }, (_, slot) => ({
+      company,
+      title: titleFor(params.designation, slot, rosterRand),
+    })),
+  );
+
+  const start = (page - 1) * DEMO_PAGE_SIZE;
+  if (start >= roster.length) return { jobs: [], hasMore: false };
+  const listings = roster.slice(start, start + DEMO_PAGE_SIZE);
+  const hasMore = page < DEMO_MAX_PAGES && start + DEMO_PAGE_SIZE < roster.length;
+
+  const jobs = listings.map(({ company, title }, index) => {
     const workType = pick(rand, WORK_TYPES);
     const scale = CURRENCY_SCALE[currency] ?? 1;
     const base = (55_000 + Math.floor(rand() * 90_000)) * scale;
-    const description = pick(rand, RESPONSIBILITY_TEMPLATES).replaceAll("{title}", params.designation);
-    const seniority = rand() > 0.65 ? "Senior " : rand() > 0.85 ? "Lead " : "";
+    // Templates supply their own verbs ("Lead {title} initiatives"), so they
+    // interpolate the bare role rather than the seniority-prefixed title.
+    const roleForCopy = params.designation || title;
+    const description = pick(rand, RESPONSIBILITY_TEMPLATES).replaceAll("{title}", roleForCopy);
 
     return {
-      id: `demo:${hashSeed(`${company.domain}${params.designation}${index}`)}`,
-      title: `${seniority}${params.designation}`,
+      id: `demo:${hashSeed(`${company.domain}${title}${page}${index}`)}`,
+      title,
       companyName: company.name,
       companyDomain: company.domain,
       companyLogoUrl: null,
@@ -184,6 +290,8 @@ export function demoJobs(params: SearchParams): JobPost[] {
       source: "Demo data",
     } satisfies JobPost;
   });
+
+  return { jobs, hasMore };
 }
 
 export function demoContacts(domain: string, companyName?: string): ContactPerson[] {

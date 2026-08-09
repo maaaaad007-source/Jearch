@@ -68,9 +68,12 @@ export interface JobWithContact {
 }
 
 export interface SearchParams {
+  /** Optional only when `company` is set — one of the two is always required. */
   designation: string;
   /** ISO 3166-1 alpha-2 country code. */
   country: string;
+  /** Narrow results to a single employer. */
+  company?: string;
   page?: number;
 }
 
@@ -80,6 +83,8 @@ export interface JobsApiResponse {
   /** True when results are locally generated because no API key is configured. */
   demo: boolean;
   page: number;
+  /** Whether requesting the next page is worth doing. */
+  hasMore: boolean;
 }
 
 export interface ContactsApiResponse {

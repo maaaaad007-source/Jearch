@@ -10,8 +10,8 @@ export default function HomePage() {
             Skip the application portal. Reach the person hiring.
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
-            Search active postings by job title and country, then get the decision maker behind each one —
-            recruiter or hiring lead, with LinkedIn, work email and direct line where they exist.
+            Search active postings by job title, company, or both, then get the decision maker behind each
+            one — recruiter or hiring lead, with LinkedIn, work email and direct line where they exist.
           </p>
         </div>
 

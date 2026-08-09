@@ -1,6 +1,6 @@
 # Jearch — Direct-Contact Job Finder
 
-Search active job postings by **title** and **country**, and get the decision maker behind each one:
+Search active job postings by **title**, **company**, and **country**, and get the decision maker behind each one:
 recruiter or hiring lead, with LinkedIn profile, verified work email and direct phone where they exist.
 Draft the outreach email in one click, and bookmark what you want to follow up on.
 
@@ -39,7 +39,7 @@ To go live, copy `.env.example` to `.env.local` and fill in at least one job key
 ## How it works
 
 ```text
-[Title + Country]
+[Title and/or Company + Country]
        │
        ▼
 GET /api/jobs ─────────► JSearch / TheirStack ──► normalized JobPost[]
@@ -57,6 +57,10 @@ the contact panels fill in when enrichment lands, instead of the page waiting on
 
 Every provider adapter in `lib/providers/` maps its vendor payload into the shared types in
 `types/index.ts`, so swapping JSearch for TheirStack — or Apollo for Hunter — never touches a component.
+
+The company filter is applied differently per provider, because their APIs differ: TheirStack has a real
+employer filter, while JSearch takes only free text, so the company is folded into the query and the
+results are filtered on the way back.
 
 ---
 
@@ -89,8 +93,11 @@ by it. Read the comments in the schema before using it with real data.
 
 ## Features
 
-**Search** — job title with autocomplete over a curated title corpus, country select with ISO 3166-1
-alpha-2 mapping, skeleton loading states.
+**Search** — job title with autocomplete over a curated title corpus, an optional company filter, and a
+type-to-filter country picker (alphabetical, matches on name or ISO 3166-1 alpha-2 code, accent
+insensitive). Either the title or the company is enough on its own. Skeleton loading states throughout,
+and a **Load more** button that pages the job board without re-billing enrichment for companies already
+looked up.
 
 **Result cards** — two sections per card:
 
@@ -110,7 +117,7 @@ client via `mailto:`, or copied whole to the clipboard.
 
 ```
 app/
-  api/jobs/         GET  designation + country → normalized postings
+  api/jobs/         GET  designation and/or company + country, paged → postings
   api/contacts/     POST company domains → ranked decision makers
   api/saved/        Optional Supabase-backed bookmark sync
   page.tsx          Search + results
@@ -118,7 +125,7 @@ app/
 components/         Cards, panels, dialogs, and ui/ primitives
 lib/
   providers/        One adapter per vendor + demo data generator
-  countries.ts      ISO country list
+  countries.ts      ISO country list + the combobox search filter
   email-template.ts Outreach draft builder
   text.ts           HTML stripping and responsibility summarization
 store/              Zustand stores (search pipeline, saved bookmarks)
