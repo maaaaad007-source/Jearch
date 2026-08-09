@@ -77,6 +77,7 @@ All environment variables are optional; see `.env.example` for the full list.
 | `THEIRSTACK_API_KEY` | TheirStack job search |
 | `SERPER_API_KEY` | Serper — powers both LinkedIn job listings and LinkedIn contact lookup |
 | `SERPER_RESOLVE_DOMAINS` | `false` skips the extra credit spent resolving a company's website (default: resolve) |
+| `SERPER_PLAIN_QUERIES` | `true` skips operator queries outright — set this on a free Serper account |
 | `APOLLO_API_KEY` | Apollo.io people search |
 | `HUNTER_API_KEY` | Hunter.io domain search |
 | `JOB_PROVIDER` | Pin the job provider: `jsearch` \| `theirstack` \| `serper` \| `demo` |
@@ -106,6 +107,11 @@ those titles into postings — real LinkedIn listings, one credit per search, no
 The trade-off is what a search result contains: title, company, location, a snippet and the LinkedIn
 URL — but no salary and no employer website. The contact side compensates by looking companies up by
 name.
+
+**Free Serper accounts reject operator queries** (`Query pattern not allowed for free accounts`), and
+`site:` is exactly what the precise search uses. The adapter detects that rejection and retries with a
+plain keyword query, filtering results by URL so only LinkedIn job pages and profiles survive — fewer
+results per credit, but it works. Set `SERPER_PLAIN_QUERIES=true` to skip the doomed first attempt.
 
 ### What Serper can and cannot give you for contacts
 

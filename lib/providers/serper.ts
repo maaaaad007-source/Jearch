@@ -39,10 +39,18 @@ interface SerperResponse {
   credits?: number;
 }
 
+interface SearchOptions {
+  country?: string;
+  page?: number;
+  num?: number;
+  recentOnly?: boolean;
+  kind?: "jobs" | "contacts";
+}
+
 async function serperSearch(
   query: string,
   apiKey: string,
-  options: { country?: string; page?: number; num?: number; recentOnly?: boolean },
+  options: SearchOptions,
   signal?: AbortSignal,
 ): Promise<SerperOrganicResult[]> {
   const body: Record<string, unknown> = {
@@ -66,7 +74,7 @@ async function serperSearch(
   if (!response.ok) {
     throw new ProviderError({
       provider: "Serper",
-      kind: query.includes("linkedin.com/in") ? "contacts" : "jobs",
+      kind: options.kind ?? "jobs",
       status: response.status,
       body: await response.text().catch(() => ""),
       envVar: "SERPER_API_KEY",
@@ -76,6 +84,60 @@ async function serperSearch(
 
   const payload = (await response.json()) as SerperResponse;
   return payload.organic ?? [];
+}
+
+/**
+ * Free Serper accounts reject search-operator queries ("Query pattern not
+ * allowed for free accounts"), and `site:` is exactly what the LinkedIn
+ * searches are built on.
+ *
+ * So each search has two forms: a precise one using operators, and a plain
+ * keyword fallback. A rejection of the precise form downgrades to the plain
+ * one and is remembered, so a restricted account pays the cost once rather
+ * than on every search. Results are filtered by URL either way, so the plain
+ * form still yields only LinkedIn job pages or profiles — just fewer of them
+ * per credit.
+ */
+let operatorsRestricted = false;
+
+/**
+ * The learned flag only lives as long as the server process, so a serverless
+ * deployment rediscovers the restriction — and burns a rejected call doing it —
+ * on every cold start. Setting SERPER_PLAIN_QUERIES=true skips the operator
+ * attempt outright, which is what a free account wants.
+ */
+function forcePlainQueries(): boolean {
+  return process.env.SERPER_PLAIN_QUERIES?.trim().toLowerCase() === "true";
+}
+
+function isOperatorRejection(error: unknown): boolean {
+  if (!(error instanceof ProviderError) || error.status !== 400) return false;
+  return /pattern|operator|not allowed|unsupported/i.test(error.message);
+}
+
+async function searchWithFallback(
+  queries: { precise: string; plain: string },
+  apiKey: string,
+  options: SearchOptions,
+  signal?: AbortSignal,
+): Promise<SerperOrganicResult[]> {
+  // Plain queries also drop the freshness filter and the larger page size, in
+  // case those are part of what a restricted account refuses.
+  const plainOptions: SearchOptions = { ...options, recentOnly: false, num: Math.min(options.num ?? 10, 10) };
+
+  if (operatorsRestricted || forcePlainQueries()) {
+    return serperSearch(queries.plain, apiKey, plainOptions, signal);
+  }
+
+  try {
+    return await serperSearch(queries.precise, apiKey, options, signal);
+  } catch (error) {
+    if (!isOperatorRejection(error)) throw error;
+
+    console.warn("[serper] operator query refused; falling back to plain keywords");
+    operatorsRestricted = true;
+    return serperSearch(queries.plain, apiKey, plainOptions, signal);
+  }
 }
 
 // --- Job listings -----------------------------------------------------------
@@ -212,15 +274,23 @@ export async function searchSerperJobs(
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<JobPost[]> {
-  const terms = ["site:linkedin.com/jobs/view"];
-  if (params.designation) terms.push(`"${params.designation}"`);
-  if (params.company) terms.push(`"${params.company}"`);
-  terms.push(countryName(params.country));
+  const subject = [params.designation, params.company].filter(Boolean);
+  const country = countryName(params.country);
 
-  const results = await serperSearch(
-    terms.join(" "),
+  const precise = [
+    "site:linkedin.com/jobs/view",
+    ...subject.map((term) => `"${term}"`),
+    country,
+  ].join(" ");
+
+  // No operators: Google still surfaces LinkedIn job pages for this, and the
+  // URL filter below discards everything that is not one.
+  const plain = ["linkedin jobs", ...subject, country].join(" ");
+
+  const results = await searchWithFallback(
+    { precise, plain },
     apiKey,
-    { country: params.country, page: params.page, num: 20, recentOnly: true },
+    { country: params.country, page: params.page, num: 20, recentOnly: true, kind: "jobs" },
     signal,
   );
 
@@ -345,9 +415,12 @@ export async function resolveCompanyDomain(
 ): Promise<string | null> {
   if (process.env.SERPER_RESOLVE_DOMAINS?.trim().toLowerCase() === "false") return null;
 
-  const results = await serperSearch(`"${companyName}" official website`, apiKey, { num: 10 }, signal).catch(
-    () => [] as SerperOrganicResult[],
-  );
+  const results = await searchWithFallback(
+    { precise: `"${companyName}" official website`, plain: `${companyName} official website` },
+    apiKey,
+    { num: 10, kind: "contacts" },
+    signal,
+  ).catch(() => [] as SerperOrganicResult[]);
 
   for (const result of results) {
     if (!result.link) continue;
@@ -370,18 +443,23 @@ export async function searchSerperContacts(
   apiKey: string,
   signal?: AbortSignal,
 ): Promise<ContactPerson[]> {
-  // A handful of the highest-value titles — a longer OR list dilutes the query
+  // A handful of the highest-value titles — a longer list dilutes the query
   // and Google truncates it anyway.
-  const titles = DECISION_MAKER_TITLES.slice(0, 6)
-    .map((title) => `"${title}"`)
-    .join(" OR ");
+  const titles = DECISION_MAKER_TITLES.slice(0, 6);
 
   // Without a domain there is no address to construct, so look one up first.
   const domain = company.domain ?? (await resolveCompanyDomain(company.companyName, apiKey, signal));
   const resolved = { companyName: company.companyName, domain };
 
-  const query = `site:linkedin.com/in "${company.companyName}" (${titles})`;
-  const results = await serperSearch(query, apiKey, { num: 10 }, signal);
+  const precise = `site:linkedin.com/in "${company.companyName}" (${titles.map((t) => `"${t}"`).join(" OR ")})`;
+  const plain = `linkedin ${company.companyName} recruiter talent acquisition hiring manager`;
+
+  const results = await searchWithFallback(
+    { precise, plain },
+    apiKey,
+    { num: 10, kind: "contacts" },
+    signal,
+  );
 
   const contacts = results
     .map((result) => mapSerperContact(result, resolved))

@@ -36,6 +36,7 @@ export async function GET() {
       JOB_PROVIDER: serverEnv.jobProviderOverride ?? null,
       JSEARCH_PATH: process.env.JSEARCH_PATH?.trim() || null,
       SERPER_RESOLVE_DOMAINS: process.env.SERPER_RESOLVE_DOMAINS?.trim() || null,
+      SERPER_PLAIN_QUERIES: process.env.SERPER_PLAIN_QUERIES?.trim() || null,
       CONTACT_PROVIDER: serverEnv.contactProviderOverride ?? null,
       SUPABASE: isSupabaseConfigured(),
     },
