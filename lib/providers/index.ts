@@ -19,6 +19,12 @@ import {
   searchJobTech,
   supportsCountry as jobtechSupportsCountry,
 } from "@/lib/providers/jobtech";
+import {
+  PAGE_SIZE as ADZUNA_PAGE_SIZE,
+  searchAdzuna,
+  supportsCountry as adzunaSupportsCountry,
+} from "@/lib/providers/adzuna";
+import { refineResults } from "@/lib/providers/relevance";
 
 export interface JobSearchResult {
   jobs: JobPost[];
@@ -52,6 +58,11 @@ async function runJobProvider(
     return { jobs, provider, demo: false, hasMore: jobs.length >= JOBTECH_PAGE_SIZE, notice: null };
   }
 
+  if (provider === "adzuna") {
+    const jobs = await searchAdzuna(params, serverEnv.adzunaAppId!, serverEnv.adzunaAppKey!, signal);
+    return { jobs, provider, demo: false, hasMore: jobs.length >= ADZUNA_PAGE_SIZE, notice: null };
+  }
+
   if (provider === "jsearch") {
     const jobs = await searchJSearch(params, serverEnv.jsearchKey!, signal);
     // JSearch reports no total, so a non-empty page is the only signal that
@@ -66,8 +77,9 @@ async function runJobProvider(
 
   if (provider === "serper") {
     const jobs = await searchSerperJobs(params, serverEnv.serperKey!, signal);
-    // A Google page holds ~10 usable results; a full one implies another.
-    return { jobs, provider, demo: false, hasMore: jobs.length >= 8, notice: null };
+    // Google always has another page; whether it holds anything usable is only
+    // discovered by asking, and offering the button is the cheaper mistake.
+    return { jobs, provider, demo: false, hasMore: jobs.length > 0, notice: null };
   }
 
   const { jobs, hasMore } = demoJobs(params);
@@ -92,6 +104,7 @@ function jobProviderChain(country: string): JobProvider[] {
   };
 
   if (serverEnv.jobtechEnabled && jobtechSupportsCountry(country)) add("jobtech");
+  if (serverEnv.adzunaAppId && serverEnv.adzunaAppKey && adzunaSupportsCountry(country)) add("adzuna");
 
   add(resolveJobProvider());
 
@@ -107,6 +120,7 @@ function jobProviderChain(country: string): JobProvider[] {
 
 const PROVIDER_NAMES: Record<JobProvider, string> = {
   jobtech: "Platsbanken (JobTech)",
+  adzuna: "Adzuna",
   jsearch: "JSearch",
   theirstack: "TheirStack",
   serper: "LinkedIn via Serper",
@@ -133,7 +147,16 @@ export async function findJobs(params: SearchParams, signal?: AbortSignal): Prom
 
   for (const provider of chain) {
     try {
-      const result = await runJobProvider(provider, params, signal);
+      const raw = await runJobProvider(provider, params, signal);
+
+      // Every source gets the title vetted, not just the search engines: a
+      // structured API's own relevance ranking still returns adjacent roles,
+      // and "UX Writer" is not the job someone searching "UX Designer" asked
+      // for. The description fallback keeps the honest near-misses.
+      const result = {
+        ...raw,
+        jobs: refineResults(raw.jobs, params, { enforceDesignation: true }),
+      };
 
       if (result.jobs.length > 0) {
         const explained = skipped

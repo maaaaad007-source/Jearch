@@ -434,11 +434,31 @@ export function parseBoardTitle(
     }
 
     const candidate = separated[1];
-    const isBoard = boardName && candidate.toLowerCase() === boardName.toLowerCase();
-    return { title: cleanRole(separated[0]), companyName: isBoard ? null : candidate };
+    return { title: cleanRole(separated[0]), companyName: isSameAsBoard(candidate, boardName) ? null : candidate };
   }
 
   return { title: cleanRole(cleaned), companyName: companyFromUrl };
+}
+
+/**
+ * Is this "employer" really the site the page is on?
+ *
+ * A title ending "| JobzMall" names the aggregator, not who is hiring, and the
+ * board label may be a bare host ("jobzmall.com") while the title spells it
+ * out — so the comparison strips the domain and any punctuation first.
+ */
+function isSameAsBoard(candidate: string, boardName?: string): boolean {
+  if (!boardName) return false;
+
+  const normalise = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/\.(com|io|co|net|org|se|nl|de|fr|uk|dev)$/i, "")
+      .replace(/[^a-z0-9]/g, "");
+
+  const a = normalise(candidate);
+  const b = normalise(boardName);
+  return Boolean(a) && Boolean(b) && (a === b || a.includes(b) || b.includes(a));
 }
 
 /**

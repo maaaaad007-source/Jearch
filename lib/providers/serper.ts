@@ -136,7 +136,7 @@ async function searchWithFallback(
 ): Promise<SerperOrganicResult[]> {
   // Plain queries also drop the freshness filter and the larger page size, in
   // case those are part of what a restricted account refuses.
-  const plainOptions: SearchOptions = { ...options, recentOnly: false, num: Math.min(options.num ?? 10, 10) };
+  const plainOptions: SearchOptions = { ...options, recentOnly: false, num: options.num ?? 20 };
 
   if (operatorsRestricted || forcePlainQueries()) {
     return serperSearch(queries.plain, apiKey, plainOptions, signal);

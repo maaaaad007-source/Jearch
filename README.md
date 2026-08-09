@@ -31,7 +31,7 @@ To go live, copy `.env.example` to `.env.local` and fill in at least one job key
 | Styling | Tailwind CSS v4 + Shadcn-style UI primitives on Radix |
 | UI state | Zustand |
 | Persistence | Zustand `persist` → `localStorage`, optionally mirrored to Supabase |
-| Job search | Platsbanken/JobTech (Sweden), JSearch (RapidAPI), TheirStack, or job boards via Serper |
+| Job search | Platsbanken/JobTech (Sweden), Adzuna (19 countries), JSearch, TheirStack, or job boards via Serper |
 | Contact enrichment | Serper (LinkedIn), Apollo.io, or Hunter.io |
 
 ---
@@ -75,6 +75,7 @@ All environment variables are optional; see `.env.example` for the full list.
 | `JSEARCH_ENDPOINT` | Override the JSearch base URL (testing or a proxy) |
 | `SERPER_ENDPOINT` | Override the Serper base URL (testing or a proxy) |
 | `JOBTECH_API_KEY` | Optional key for JobTech/Platsbanken (free, from apirequest.jobtechdev.se) |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna credentials (free, from developer.adzuna.com) — covers 19 countries |
 | `JOBTECH_DISABLED` | `true` skips JobTech even for Swedish searches |
 | `THEIRSTACK_API_KEY` | TheirStack job search |
 | `SERPER_API_KEY` | Serper — powers both LinkedIn job listings and LinkedIn contact lookup |
@@ -96,12 +97,27 @@ A search engine indexes web pages; a job board holds the jobs. Asked for UX Desi
 returns directory pages and a handful of postings, while LinkedIn's own search shows ninety-odd — the
 gap is not filtering, it is the data source.
 
-So where a national board covers the country, it leads. **Sweden uses
+So where a jobs database covers the country, it leads. **Sweden uses
 [JobTech/Platsbanken](https://jobtechdev.se)**, the Public Employment Service's ad API: free, structured,
 and close to complete for the market, since that is where employers advertising in Sweden post. It also
 carries each ad's application email, which yields the employer's real domain rather than a guessed one.
+**[Adzuna](https://developer.adzuna.com)** covers nineteen more countries — the Netherlands, UK, Germany,
+France, Poland, the US and others — on the same principle, with a real employer filter of its own.
 
-Search-based sources remain the fallback for markets no board covers.
+Search-based sources remain the fallback for markets neither covers.
+
+### What the form promises, enforced
+
+Whatever the source, `lib/providers/relevance.ts` applies the promises the search form makes, so a new
+provider inherits them rather than re-implementing them:
+
+- **A company filter means that company.** Searching "UX Designer at Booking.com" returned postings from
+  HousingAnywhere and Wongdoody until this was enforced; a filter that does not filter is a bug.
+- **The role has to be the role.** Every significant word must appear, synonyms allowed, so "User
+  Experience Designer" matches "UX Designer" while "UX Writer" does not — sharing "UX" is not enough to
+  make them the same job. A posting titled "Designer II Job Opening" is still kept when its description
+  names the discipline.
+- **Nothing stale.** Postings older than 120 days are dropped, whatever the index still lists.
 
 Job sources are tried **in order** rather than one being picked and stuck with. Different boards index
 different employers, so when the preferred source returns nothing — or is unreachable — the next

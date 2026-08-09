@@ -4,7 +4,7 @@
  * a fresh clone runs with `npm run dev` and nothing else.
  */
 
-export type JobProvider = "jobtech" | "jsearch" | "theirstack" | "serper" | "demo";
+export type JobProvider = "jobtech" | "adzuna" | "jsearch" | "theirstack" | "serper" | "demo";
 export type ContactProvider = "apollo" | "hunter" | "serper" | "demo";
 
 function read(name: string): string | undefined {
@@ -36,6 +36,12 @@ export const serverEnv = {
   get jobtechEnabled() {
     return read("JOBTECH_DISABLED")?.toLowerCase() !== "true";
   },
+  get adzunaAppId() {
+    return read("ADZUNA_APP_ID");
+  },
+  get adzunaAppKey() {
+    return read("ADZUNA_APP_KEY");
+  },
   get supabaseUrl() {
     return read("NEXT_PUBLIC_SUPABASE_URL");
   },
@@ -58,6 +64,7 @@ export function resolveJobProvider(): JobProvider {
   if (override === "theirstack" && serverEnv.theirstackKey) return "theirstack";
   if (override === "serper" && serverEnv.serperKey) return "serper";
   if (override === "jobtech") return "jobtech";
+  if (override === "adzuna" && serverEnv.adzunaAppId) return "adzuna";
 
   if (serverEnv.jsearchKey) return "jsearch";
   if (serverEnv.theirstackKey) return "theirstack";

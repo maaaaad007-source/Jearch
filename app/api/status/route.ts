@@ -35,6 +35,8 @@ export async function GET() {
       SERPER_API_KEY: Boolean(serverEnv.serperKey),
       JOBTECH_API_KEY: Boolean(serverEnv.jobtechKey),
       JOBTECH_ENABLED: serverEnv.jobtechEnabled,
+      ADZUNA_APP_ID: Boolean(serverEnv.adzunaAppId),
+      ADZUNA_APP_KEY: Boolean(serverEnv.adzunaAppKey),
       JOB_PROVIDER: serverEnv.jobProviderOverride ?? null,
       JSEARCH_PATH: process.env.JSEARCH_PATH?.trim() || null,
       SERPER_RESOLVE_DOMAINS: process.env.SERPER_RESOLVE_DOMAINS?.trim() || null,
