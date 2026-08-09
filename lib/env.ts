@@ -93,6 +93,42 @@ export function resolveContactProvider(): ContactProvider {
   return "demo";
 }
 
+/**
+ * Credentials that are half-present.
+ *
+ * A provider needing two values is skipped when only one is set, which looks
+ * exactly like a provider that was never configured — the user sees results
+ * from somewhere else and no explanation. Naming the missing half turns a
+ * silent skip into an instruction.
+ */
+export function configWarnings(): string[] {
+  const warnings: string[] = [];
+
+  if (serverEnv.adzunaAppId && !serverEnv.adzunaAppKey) {
+    warnings.push(
+      "Adzuna is being skipped: ADZUNA_APP_ID is set but ADZUNA_APP_KEY is missing. Both the Application ID and the Application Key are required — add the key and redeploy.",
+    );
+  }
+
+  if (serverEnv.adzunaAppKey && !serverEnv.adzunaAppId) {
+    warnings.push(
+      "Adzuna is being skipped: ADZUNA_APP_KEY is set but ADZUNA_APP_ID is missing. Both values are required — add the id and redeploy.",
+    );
+  }
+
+  if (isSupabaseConfiguredPartially()) {
+    warnings.push(
+      "Supabase sync is off: only one of NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY is set. Bookmarks stay in this browser until both are.",
+    );
+  }
+
+  return warnings;
+}
+
+function isSupabaseConfiguredPartially(): boolean {
+  return Boolean(serverEnv.supabaseUrl) !== Boolean(serverEnv.supabaseAnonKey);
+}
+
 export function isSupabaseConfigured(): boolean {
   return Boolean(serverEnv.supabaseUrl && serverEnv.supabaseAnonKey);
 }

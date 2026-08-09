@@ -1,5 +1,6 @@
 import type { ContactPerson, JobPost, SearchParams } from "@/types";
 import {
+  configWarnings,
   resolveContactProvider,
   resolveJobProvider,
   serverEnv,
@@ -165,10 +166,12 @@ export async function findJobs(params: SearchParams, signal?: AbortSignal): Prom
           )
           .join(", ");
 
-        return {
-          ...result,
-          notice: explained ? `${explained} — these results come from ${PROVIDER_NAMES[provider]}.` : null,
-        };
+        const fallback = explained ? `${explained} — these results come from ${PROVIDER_NAMES[provider]}.` : null;
+
+        // A half-configured source is worth saying out loud here, not only in
+        // the diagnostic endpoint: it is the likeliest reason the results came
+        // from a weaker source than the user expected.
+        return { ...result, notice: [fallback, ...configWarnings()].filter(Boolean).join(" ") || null };
       }
 
       firstEmpty ??= result;
@@ -184,13 +187,12 @@ export async function findJobs(params: SearchParams, signal?: AbortSignal): Prom
   // Something answered, just with nothing in it.
   if (firstEmpty) {
     const searched = chain.map((p) => PROVIDER_NAMES[p]).join(" and ");
-    return {
-      ...firstEmpty,
-      notice:
-        chain.length > 1
-          ? `Searched ${searched} — no match in either.${failures.length > 0 ? ` (${failures.join(" · ")})` : ""}`
-          : null,
-    };
+    const summary =
+      chain.length > 1
+        ? `Searched ${searched} — no match in either.${failures.length > 0 ? ` (${failures.join(" · ")})` : ""}`
+        : `Searched ${searched} — no match.`;
+
+    return { ...firstEmpty, notice: [summary, ...configWarnings()].filter(Boolean).join(" ") };
   }
 
   // Nothing answered at all: every source threw.

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  configWarnings,
   isSupabaseConfigured,
   resolveContactProvider,
   resolveJobProvider,
@@ -13,6 +14,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function buildHint(country: string): string {
+  const warnings = configWarnings();
+  if (warnings.length > 0) return warnings.join(" ");
+
   const order = jobProviderChain(country);
 
   if (order[0] === "demo") {
@@ -45,6 +49,7 @@ export async function GET(request: Request) {
     jobProvider,
     contactProvider,
     jobSourcesFor: { country, order: jobProviderChain(country) },
+    warnings: configWarnings(),
     usingDemoData: jobProvider === "demo" || contactProvider === "demo",
     environmentVariablesDetected: {
       RAPIDAPI_KEY: Boolean(serverEnv.jsearchKey),
