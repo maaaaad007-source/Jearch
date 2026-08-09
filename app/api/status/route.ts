@@ -33,6 +33,8 @@ export async function GET() {
       APOLLO_API_KEY: Boolean(serverEnv.apolloKey),
       HUNTER_API_KEY: Boolean(serverEnv.hunterKey),
       SERPER_API_KEY: Boolean(serverEnv.serperKey),
+      JOBTECH_API_KEY: Boolean(serverEnv.jobtechKey),
+      JOBTECH_ENABLED: serverEnv.jobtechEnabled,
       JOB_PROVIDER: serverEnv.jobProviderOverride ?? null,
       JSEARCH_PATH: process.env.JSEARCH_PATH?.trim() || null,
       SERPER_RESOLVE_DOMAINS: process.env.SERPER_RESOLVE_DOMAINS?.trim() || null,

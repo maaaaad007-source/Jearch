@@ -4,7 +4,7 @@
  * a fresh clone runs with `npm run dev` and nothing else.
  */
 
-export type JobProvider = "jsearch" | "theirstack" | "serper" | "demo";
+export type JobProvider = "jobtech" | "jsearch" | "theirstack" | "serper" | "demo";
 export type ContactProvider = "apollo" | "hunter" | "serper" | "demo";
 
 function read(name: string): string | undefined {
@@ -28,6 +28,14 @@ export const serverEnv = {
   get serperKey() {
     return read("SERPER_API_KEY");
   },
+  /** Optional: JobTech has been open, and the adapter works without a key. */
+  get jobtechKey() {
+    return read("JOBTECH_API_KEY");
+  },
+  /** JobTech covers Sweden only, so it is enabled per-country, not per-key. */
+  get jobtechEnabled() {
+    return read("JOBTECH_DISABLED")?.toLowerCase() !== "true";
+  },
   get supabaseUrl() {
     return read("NEXT_PUBLIC_SUPABASE_URL");
   },
@@ -49,6 +57,7 @@ export function resolveJobProvider(): JobProvider {
   if (override === "jsearch" && serverEnv.jsearchKey) return "jsearch";
   if (override === "theirstack" && serverEnv.theirstackKey) return "theirstack";
   if (override === "serper" && serverEnv.serperKey) return "serper";
+  if (override === "jobtech") return "jobtech";
 
   if (serverEnv.jsearchKey) return "jsearch";
   if (serverEnv.theirstackKey) return "theirstack";

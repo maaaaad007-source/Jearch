@@ -31,7 +31,7 @@ To go live, copy `.env.example` to `.env.local` and fill in at least one job key
 | Styling | Tailwind CSS v4 + Shadcn-style UI primitives on Radix |
 | UI state | Zustand |
 | Persistence | Zustand `persist` → `localStorage`, optionally mirrored to Supabase |
-| Job search | JSearch (RapidAPI), TheirStack, or LinkedIn via Serper |
+| Job search | Platsbanken/JobTech (Sweden), JSearch (RapidAPI), TheirStack, or job boards via Serper |
 | Contact enrichment | Serper (LinkedIn), Apollo.io, or Hunter.io |
 
 ---
@@ -74,6 +74,8 @@ All environment variables are optional; see `.env.example` for the full list.
 | `JSEARCH_PATH` | Override the JSearch endpoint path if it is renamed again (default: probes `/search-v2`, then `/search`) |
 | `JSEARCH_ENDPOINT` | Override the JSearch base URL (testing or a proxy) |
 | `SERPER_ENDPOINT` | Override the Serper base URL (testing or a proxy) |
+| `JOBTECH_API_KEY` | Optional key for JobTech/Platsbanken (free, from apirequest.jobtechdev.se) |
+| `JOBTECH_DISABLED` | `true` skips JobTech even for Swedish searches |
 | `THEIRSTACK_API_KEY` | TheirStack job search |
 | `SERPER_API_KEY` | Serper — powers both LinkedIn job listings and LinkedIn contact lookup |
 | `SERPER_RESOLVE_DOMAINS` | `false` skips the extra credit spent resolving a company's website (default: resolve) |
@@ -87,6 +89,19 @@ All environment variables are optional; see `.env.example` for the full list.
 
 Provider selection falls back gracefully: whichever key is present wins, and with nothing set the app
 uses demo data and says so in the results header.
+
+### Why a national job board beats a search engine
+
+A search engine indexes web pages; a job board holds the jobs. Asked for UX Designers in Sweden, Google
+returns directory pages and a handful of postings, while LinkedIn's own search shows ninety-odd — the
+gap is not filtering, it is the data source.
+
+So where a national board covers the country, it leads. **Sweden uses
+[JobTech/Platsbanken](https://jobtechdev.se)**, the Public Employment Service's ad API: free, structured,
+and close to complete for the market, since that is where employers advertising in Sweden post. It also
+carries each ad's application email, which yields the employer's real domain rather than a guessed one.
+
+Search-based sources remain the fallback for markets no board covers.
 
 Job sources are tried **in order** rather than one being picked and stuck with. Different boards index
 different employers, so when the preferred source returns nothing — or is unreachable — the next

@@ -14,6 +14,11 @@ import { PAGE_SIZE as THEIRSTACK_PAGE_SIZE, searchTheirStack } from "@/lib/provi
 import { searchApolloContacts } from "@/lib/providers/apollo";
 import { searchHunterContacts } from "@/lib/providers/hunter";
 import { searchSerperContacts, searchSerperJobs } from "@/lib/providers/serper";
+import {
+  PAGE_SIZE as JOBTECH_PAGE_SIZE,
+  searchJobTech,
+  supportsCountry as jobtechSupportsCountry,
+} from "@/lib/providers/jobtech";
 
 export interface JobSearchResult {
   jobs: JobPost[];
@@ -42,6 +47,11 @@ async function runJobProvider(
   params: SearchParams,
   signal?: AbortSignal,
 ): Promise<JobSearchResult> {
+  if (provider === "jobtech") {
+    const jobs = await searchJobTech(params, serverEnv.jobtechKey, signal);
+    return { jobs, provider, demo: false, hasMore: jobs.length >= JOBTECH_PAGE_SIZE, notice: null };
+  }
+
   if (provider === "jsearch") {
     const jobs = await searchJSearch(params, serverEnv.jsearchKey!, signal);
     // JSearch reports no total, so a non-empty page is the only signal that
@@ -64,20 +74,39 @@ async function runJobProvider(
   return { jobs, provider: "demo", demo: true, hasMore, notice: null };
 }
 
-/** Every configured job source, best first, honouring an explicit override. */
-function jobProviderChain(): JobProvider[] {
-  const preferred = resolveJobProvider();
-  if (serverEnv.jobProviderOverride) return [preferred];
+/**
+ * Every usable job source for this search, best first.
+ *
+ * A national job board leads wherever one covers the country: it is a jobs
+ * database rather than an index of web pages, so it answers "every UX Designer
+ * ad in Sweden" with every ad, while a search engine answers with whatever
+ * ranked. Search-based sources follow as the fallback for markets no board
+ * covers. An explicit JOB_PROVIDER pins one source and disables the chain.
+ */
+function jobProviderChain(country: string): JobProvider[] {
+  if (serverEnv.jobProviderOverride) return [resolveJobProvider()];
 
-  const rest: JobProvider[] = [];
-  if (serverEnv.jsearchKey) rest.push("jsearch");
-  if (serverEnv.serperKey) rest.push("serper");
-  if (serverEnv.theirstackKey) rest.push("theirstack");
+  const chain: JobProvider[] = [];
+  const add = (provider: JobProvider) => {
+    if (!chain.includes(provider)) chain.push(provider);
+  };
 
-  return [preferred, ...rest.filter((provider) => provider !== preferred)];
+  if (serverEnv.jobtechEnabled && jobtechSupportsCountry(country)) add("jobtech");
+
+  add(resolveJobProvider());
+
+  if (serverEnv.jsearchKey) add("jsearch");
+  if (serverEnv.serperKey) add("serper");
+  if (serverEnv.theirstackKey) add("theirstack");
+
+  // Demo only leads when nothing real is configured; as a tail it would mask a
+  // genuine empty result with sample data.
+  const real = chain.filter((provider) => provider !== "demo");
+  return real.length > 0 ? real : ["demo"];
 }
 
 const PROVIDER_NAMES: Record<JobProvider, string> = {
+  jobtech: "Platsbanken (JobTech)",
   jsearch: "JSearch",
   theirstack: "TheirStack",
   serper: "LinkedIn via Serper",
@@ -95,7 +124,7 @@ const PROVIDER_NAMES: Record<JobProvider, string> = {
  * header can say where the postings actually came from.
  */
 export async function findJobs(params: SearchParams, signal?: AbortSignal): Promise<JobSearchResult> {
-  const chain = jobProviderChain();
+  const chain = jobProviderChain(params.country);
   const failures: string[] = [];
   // "Empty" and "broken" are different things to be told about, so the notice
   // distinguishes them rather than calling every skip "returned nothing".
