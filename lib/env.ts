@@ -36,11 +36,16 @@ export const serverEnv = {
   get jobtechEnabled() {
     return read("JOBTECH_DISABLED")?.toLowerCase() !== "true";
   },
+  /**
+   * Adzuna's dashboard calls these "Application ID" and "Application Keys",
+   * so the obvious variable names differ from person to person. Accepting the
+   * plausible spellings costs nothing and saves a redeploy spent guessing.
+   */
   get adzunaAppId() {
-    return read("ADZUNA_APP_ID");
+    return read("ADZUNA_APP_ID") ?? read("ADZUNA_ID") ?? read("ADZUNA_APPLICATION_ID");
   },
   get adzunaAppKey() {
-    return read("ADZUNA_APP_KEY");
+    return read("ADZUNA_APP_KEY") ?? read("ADZUNA_API_KEY") ?? read("ADZUNA_KEY");
   },
   get supabaseUrl() {
     return read("NEXT_PUBLIC_SUPABASE_URL");

@@ -95,7 +95,7 @@ async function runJobProvider(
  * ranked. Search-based sources follow as the fallback for markets no board
  * covers. An explicit JOB_PROVIDER pins one source and disables the chain.
  */
-function jobProviderChain(country: string): JobProvider[] {
+export function jobProviderChain(country: string): JobProvider[] {
   if (serverEnv.jobProviderOverride) return [resolveJobProvider()];
 
   const chain: JobProvider[] = [];
