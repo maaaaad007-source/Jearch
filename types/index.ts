@@ -85,6 +85,8 @@ export interface JobsApiResponse {
   page: number;
   /** Whether requesting the next page is worth doing. */
   hasMore: boolean;
+  /** Set when results came from a fallback source, or every source was empty. */
+  notice: string | null;
 }
 
 export interface ContactsApiResponse {

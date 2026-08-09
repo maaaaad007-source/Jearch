@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { jobs, provider, demo, hasMore } = await findJobs({
+    const { jobs, provider, demo, hasMore, notice } = await findJobs({
       designation: parsed.data.designation,
       company: parsed.data.company || undefined,
       country: parsed.data.country,
@@ -56,6 +56,7 @@ export async function GET(request: Request) {
       // 20 is the schema's page ceiling — stop offering "load more" there even
       // if the provider would keep going.
       hasMore: hasMore && parsed.data.page < 20,
+      notice,
     };
 
     return NextResponse.json(body);

@@ -41,6 +41,7 @@ export function ResultsGrid() {
   const contactProvider = useSearchStore((s) => s.contactProvider);
   const lastQuery = useSearchStore((s) => s.lastQuery);
   const hasMore = useSearchStore((s) => s.hasMore);
+  const notice = useSearchStore((s) => s.notice);
   const loadMore = useSearchStore((s) => s.loadMore);
 
   if (status === "idle") {
@@ -68,16 +69,31 @@ export function ResultsGrid() {
   }
 
   if (results.length === 0) {
+    // The provider badges belong here most of all: "no results" is meaningless
+    // without knowing which source was actually asked.
     return (
-      <EmptyState
-        icon={<SearchX className="size-6" />}
-        title="No postings matched that search"
-        description={
-          lastQuery
-            ? `Nothing active for ${describeQuery(lastQuery)} right now. Try a broader title, drop the company filter, or pick another country.`
-            : "Try a broader title or a different country."
-        }
-      />
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {demo && (
+            <Badge variant="warning">
+              <FlaskConical />
+              Demo data
+            </Badge>
+          )}
+          {jobProvider && <Badge variant="muted">Searched: {JOB_PROVIDER_LABELS[jobProvider] ?? jobProvider}</Badge>}
+        </div>
+
+        <EmptyState
+          icon={<SearchX className="size-6" />}
+          title="No postings matched that search"
+          description={
+            notice ??
+            (lastQuery
+              ? `Nothing active for ${describeQuery(lastQuery)} right now. Try a broader title, drop the company filter, or pick another country.`
+              : "Try a broader title or a different country.")
+          }
+        />
+      </div>
     );
   }
 
@@ -108,9 +124,9 @@ export function ResultsGrid() {
         </div>
       </div>
 
-      {error && (
+      {(error || notice) && (
         <p className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-          {error}
+          {error ?? notice}
         </p>
       )}
 

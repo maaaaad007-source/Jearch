@@ -5,7 +5,11 @@ import { findJobArray } from "@/lib/providers/jsearch-shape";
 import { normalizeDomain } from "@/lib/utils";
 
 const HOST = "jsearch.p.rapidapi.com";
-const BASE = `https://${HOST}`;
+
+/** Overridable so the pipeline can be exercised end to end against a stub. */
+function base(): string {
+  return process.env.JSEARCH_ENDPOINT?.trim().replace(/\/$/, "") || `https://${HOST}`;
+}
 
 interface JSearchJob {
   job_id?: string;
@@ -98,7 +102,7 @@ function buildUrl(path: string, params: SearchParams): URL {
   // company name is folded into the query and the results are filtered after.
   const query = [params.designation, params.company].filter(Boolean).join(" ").trim();
 
-  const url = new URL(`${BASE}${path}`);
+  const url = new URL(`${base()}${path}`);
   url.searchParams.set("query", query);
   url.searchParams.set("country", params.country.toLowerCase());
   url.searchParams.set("page", String(params.page ?? 1));

@@ -21,6 +21,8 @@ export interface JobSearchResult {
   demo: boolean;
   /** Whether asking for the next page is likely to return anything. */
   hasMore: boolean;
+  /** Explains a fallback, e.g. one source was empty so another answered. */
+  notice: string | null;
 }
 
 export interface ContactSearchResult {
@@ -35,29 +37,112 @@ export interface ContactSearchResult {
   error: string | null;
 }
 
-export async function findJobs(params: SearchParams, signal?: AbortSignal): Promise<JobSearchResult> {
-  const provider = resolveJobProvider();
-
+async function runJobProvider(
+  provider: JobProvider,
+  params: SearchParams,
+  signal?: AbortSignal,
+): Promise<JobSearchResult> {
   if (provider === "jsearch") {
     const jobs = await searchJSearch(params, serverEnv.jsearchKey!, signal);
     // JSearch reports no total, so a non-empty page is the only signal that
     // another one might exist.
-    return { jobs, provider, demo: false, hasMore: jobs.length > 0 };
+    return { jobs, provider, demo: false, hasMore: jobs.length > 0, notice: null };
   }
 
   if (provider === "theirstack") {
     const jobs = await searchTheirStack(params, serverEnv.theirstackKey!, signal);
-    return { jobs, provider, demo: false, hasMore: jobs.length >= THEIRSTACK_PAGE_SIZE };
+    return { jobs, provider, demo: false, hasMore: jobs.length >= THEIRSTACK_PAGE_SIZE, notice: null };
   }
 
   if (provider === "serper") {
     const jobs = await searchSerperJobs(params, serverEnv.serperKey!, signal);
     // A Google page holds ~10 usable results; a full one implies another.
-    return { jobs, provider, demo: false, hasMore: jobs.length >= 8 };
+    return { jobs, provider, demo: false, hasMore: jobs.length >= 8, notice: null };
   }
 
   const { jobs, hasMore } = demoJobs(params);
-  return { jobs, provider: "demo", demo: true, hasMore };
+  return { jobs, provider: "demo", demo: true, hasMore, notice: null };
+}
+
+/** Every configured job source, best first, honouring an explicit override. */
+function jobProviderChain(): JobProvider[] {
+  const preferred = resolveJobProvider();
+  if (serverEnv.jobProviderOverride) return [preferred];
+
+  const rest: JobProvider[] = [];
+  if (serverEnv.jsearchKey) rest.push("jsearch");
+  if (serverEnv.serperKey) rest.push("serper");
+  if (serverEnv.theirstackKey) rest.push("theirstack");
+
+  return [preferred, ...rest.filter((provider) => provider !== preferred)];
+}
+
+const PROVIDER_NAMES: Record<JobProvider, string> = {
+  jsearch: "JSearch",
+  theirstack: "TheirStack",
+  serper: "LinkedIn via Serper",
+  demo: "demo data",
+};
+
+/**
+ * Search the configured job sources in order, moving on when one comes back
+ * empty or broken.
+ *
+ * One provider returning nothing for a real query is common — they index
+ * different boards — and a blank screen is the least useful thing to show when
+ * another configured source would have answered. Paging stays on whichever
+ * provider produced page one, and the fallback is reported so the results
+ * header can say where the postings actually came from.
+ */
+export async function findJobs(params: SearchParams, signal?: AbortSignal): Promise<JobSearchResult> {
+  const chain = jobProviderChain();
+  const failures: string[] = [];
+  // "Empty" and "broken" are different things to be told about, so the notice
+  // distinguishes them rather than calling every skip "returned nothing".
+  const skipped: Array<{ provider: JobProvider; reason: "empty" | "failed" }> = [];
+  let firstEmpty: JobSearchResult | null = null;
+
+  for (const provider of chain) {
+    try {
+      const result = await runJobProvider(provider, params, signal);
+
+      if (result.jobs.length > 0) {
+        const explained = skipped
+          .map(({ provider: p, reason }) =>
+            reason === "empty" ? `${PROVIDER_NAMES[p]} had no match` : `${PROVIDER_NAMES[p]} could not be reached`,
+          )
+          .join(", ");
+
+        return {
+          ...result,
+          notice: explained ? `${explained} — these results come from ${PROVIDER_NAMES[provider]}.` : null,
+        };
+      }
+
+      firstEmpty ??= result;
+      skipped.push({ provider, reason: "empty" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[jobs] ${provider} failed:`, message);
+      failures.push(`${PROVIDER_NAMES[provider]}: ${message}`);
+      skipped.push({ provider, reason: "failed" });
+    }
+  }
+
+  // Something answered, just with nothing in it.
+  if (firstEmpty) {
+    const searched = chain.map((p) => PROVIDER_NAMES[p]).join(" and ");
+    return {
+      ...firstEmpty,
+      notice:
+        chain.length > 1
+          ? `Searched ${searched} — no match in either.${failures.length > 0 ? ` (${failures.join(" · ")})` : ""}`
+          : null,
+    };
+  }
+
+  // Nothing answered at all: every source threw.
+  throw new Error(failures.join(" · "));
 }
 
 /**

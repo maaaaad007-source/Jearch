@@ -72,6 +72,8 @@ All environment variables are optional; see `.env.example` for the full list.
 | --- | --- |
 | `RAPIDAPI_KEY` | JSearch via RapidAPI |
 | `JSEARCH_PATH` | Override the JSearch endpoint path if it is renamed again (default: probes `/search-v2`, then `/search`) |
+| `JSEARCH_ENDPOINT` | Override the JSearch base URL (testing or a proxy) |
+| `SERPER_ENDPOINT` | Override the Serper base URL (testing or a proxy) |
 | `THEIRSTACK_API_KEY` | TheirStack job search |
 | `SERPER_API_KEY` | Serper — powers both LinkedIn job listings and LinkedIn contact lookup |
 | `SERPER_RESOLVE_DOMAINS` | `false` skips the extra credit spent resolving a company's website (default: resolve) |
@@ -83,7 +85,13 @@ All environment variables are optional; see `.env.example` for the full list.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (optional sync) |
 
 Provider selection falls back gracefully: whichever key is present wins, and with nothing set the app
-uses demo data and says so in the results header. For contacts, Serper is preferred when available — it
+uses demo data and says so in the results header.
+
+Job sources are tried **in order** rather than one being picked and stuck with. Different boards index
+different employers, so when the preferred source returns nothing — or is unreachable — the next
+configured one is tried, and the results header says where the postings actually came from. Setting
+`JOB_PROVIDER` pins a single source and disables the chain. Paging stays on whichever source answered
+page one. For contacts, Serper is preferred when available — it
 costs a fraction of the enrichment vendors and works from a company name alone, so it returns something
 for employers the domain-based services have never indexed.
 

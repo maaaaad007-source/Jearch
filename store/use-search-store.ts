@@ -28,6 +28,8 @@ interface SearchState {
   lastQuery: Query | null;
   page: number;
   hasMore: boolean;
+  /** Explains a provider fallback, when one happened. */
+  notice: string | null;
 
   setDesignation: (value: string) => void;
   setCompany: (value: string) => void;
@@ -131,6 +133,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   lastQuery: null,
   page: 1,
   hasMore: false,
+  notice: null,
 
   setDesignation: (value) => set({ designation: value }),
   setCompany: (value) => set({ company: value }),
@@ -159,6 +162,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       hasMore: false,
       lastQuery: query,
       contactProvider: null,
+      notice: null,
     });
 
     let payload: JobsApiResponse;
@@ -177,6 +181,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       jobProvider: payload.provider,
       demo: payload.demo,
       hasMore: payload.hasMore,
+      notice: payload.notice,
     });
 
     if (results.length > 0) await enrich(set, get, results, payload.demo);
@@ -229,6 +234,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       lastQuery: null,
       page: 1,
       hasMore: false,
+      notice: null,
     }),
 }));
 
