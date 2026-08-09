@@ -82,15 +82,23 @@ const NO_CONTACT = "No decision maker found for this company.";
 function applyContacts(
   results: JobWithContact[],
   contactsByDomain: Record<string, ContactPerson[]>,
+  batchDomains: Set<string>,
+  batchError: string | null,
 ): JobWithContact[] {
   return results.map((result) => {
     const domain = result.job.companyDomain;
     if (!domain) return { ...result, contactError: NO_DOMAIN };
 
-    // A domain missing from the response was not part of this batch — leave
-    // whatever the card already had rather than blanking an earlier result.
     const contacts = contactsByDomain[domain];
-    if (!contacts) return result;
+    if (!contacts) {
+      // The whole batch failed — say so, rather than letting a bad API key
+      // masquerade as "this company has nobody".
+      if (batchError && batchDomains.has(domain)) return { ...result, contactError: batchError };
+
+      // Otherwise this domain was not part of this batch; leave whatever the
+      // card already had rather than blanking an earlier result.
+      return result;
+    }
 
     return {
       ...result,
@@ -253,6 +261,7 @@ async function enrich(set: Setter, get: Getter, pending: JobWithContact[], jobsA
 
   try {
     const payload = await fetchContacts(companies);
+    const batchDomains = new Set(companies.map((company) => company.domain));
 
     set({
       status: "success",
@@ -260,7 +269,7 @@ async function enrich(set: Setter, get: Getter, pending: JobWithContact[], jobsA
       // Only flag the run as demo when the job side was synthetic too — real
       // postings with demo contacts would make the banner misleading.
       demo: jobsAreDemo || payload.demo,
-      results: applyContacts(get().results, payload.contactsByDomain),
+      results: applyContacts(get().results, payload.contactsByDomain, batchDomains, payload.error),
     });
   } catch (error) {
     // Enrichment is additive — a failure leaves the job cards intact.

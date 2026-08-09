@@ -25,6 +25,12 @@ export interface ContactSearchResult {
   contactsByDomain: Record<string, ContactPerson[]>;
   provider: ContactProvider;
   demo: boolean;
+  /**
+   * Set when every lookup in the batch failed — almost always a bad or
+   * exhausted API key. Distinguishes "your key is wrong" from "this company
+   * has no contacts", which otherwise look identical on a card.
+   */
+  error: string | null;
 }
 
 export async function findJobs(params: SearchParams, signal?: AbortSignal): Promise<JobSearchResult> {
@@ -103,14 +109,21 @@ export async function findContacts(
   );
 
   const contactsByDomain: Record<string, ContactPerson[]> = {};
+  const failures: string[] = [];
+
   for (const result of results) {
     if (result.status === "fulfilled") {
       const [domain, contacts] = result.value;
       contactsByDomain[domain] = contacts;
     } else {
       console.error("[contacts] enrichment failed:", result.reason);
+      failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason));
     }
   }
 
-  return { contactsByDomain, provider, demo: provider === "demo" };
+  // One failed domain is routine and stays silent; all of them failing is a
+  // configuration problem the user needs to see.
+  const error = failures.length > 0 && failures.length === results.length ? failures[0] : null;
+
+  return { contactsByDomain, provider, demo: provider === "demo", error };
 }

@@ -82,6 +82,17 @@ All environment variables are optional; see `.env.example` for the full list.
 Provider selection falls back gracefully: whichever key is present wins (JSearch and Apollo preferred),
 and with nothing set the app uses demo data and says so in the results header.
 
+### Checking that your keys took effect
+
+The results header names the providers that actually served the request, so you never have to guess:
+
+- `Demo data` — no key was picked up; the app is still on sample data.
+- `Jobs: JSearch` / `Contacts: Hunter.io` — that provider answered, so the key works.
+
+If a key is present but wrong or out of quota, the failure is shown rather than swallowed: a bad job key
+surfaces the provider's message in place of the results, and a contact key that fails for every company
+puts that message on each card instead of the ambiguous "No decision maker found for this company".
+
 ### Saved opportunities
 
 Bookmarks always persist locally in the browser, so the Saved dashboard works with zero setup. Point

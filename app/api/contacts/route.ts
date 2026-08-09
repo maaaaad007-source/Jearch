@@ -54,9 +54,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { contactsByDomain, provider, demo } = await findContacts(companies);
+    const { contactsByDomain, provider, demo, error } = await findContacts(companies);
 
-    const body: ContactsApiResponse = { contactsByDomain, provider, demo };
+    const body: ContactsApiResponse = { contactsByDomain, provider, demo, error };
     return NextResponse.json(body);
   } catch (error) {
     console.error("[api/contacts]", error);

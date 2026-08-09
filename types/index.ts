@@ -92,6 +92,8 @@ export interface ContactsApiResponse {
   contactsByDomain: Record<string, ContactPerson[]>;
   provider: string;
   demo: boolean;
+  /** Set when every lookup failed — usually a bad or exhausted API key. */
+  error: string | null;
 }
 
 export interface SavedOpportunity {
