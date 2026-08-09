@@ -1,6 +1,7 @@
 import type { JobPost, SearchParams, WorkType } from "@/types";
 import { summarizeResponsibilities } from "@/lib/text";
 import { ProviderError } from "@/lib/providers/errors";
+import { findJobArray } from "@/lib/providers/jsearch-shape";
 import { normalizeDomain } from "@/lib/utils";
 
 const HOST = "jsearch.p.rapidapi.com";
@@ -170,21 +171,25 @@ export async function searchJSearch(
 
   resolvedPath = usedPath;
 
-  const payload = (await response.json()) as { data?: JSearchJob[]; jobs?: JSearchJob[] };
-  const raw = payload.data ?? payload.jobs;
+  const payload = await response.json();
+  const { jobs: raw, emptyResult } = findJobArray(payload);
 
-  // A success with no recognisable list means the response shape changed.
-  // Saying so beats rendering "no postings matched" over a parsing failure.
-  if (!Array.isArray(raw)) {
+  // An empty list is a real answer — no postings matched. Only a payload with
+  // no job array anywhere means the format moved on us, and saying so beats
+  // rendering "no postings matched" over a parsing failure.
+  if (!raw) {
+    if (emptyResult) return [];
+
+    const topLevelKeys = payload && typeof payload === "object" ? Object.keys(payload).join(", ") : typeof payload;
     throw new ProviderError({
       provider: "JSearch",
       kind: "jobs",
       status: response.status,
-      body: `Unexpected response shape from ${usedPath} — no job list found. The API format may have changed.`,
+      body: `No job list found in the ${usedPath} response (top-level keys: ${topLevelKeys}). Open /api/debug/jsearch on this app to see the structure.`,
       envVar: "RAPIDAPI_KEY",
     });
   }
 
-  const jobs = raw.map(mapJSearchJob);
+  const jobs = (raw as JSearchJob[]).map(mapJSearchJob);
   return params.company ? jobs.filter((job) => matchesCompany(job, params.company!)) : jobs;
 }

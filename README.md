@@ -85,6 +85,11 @@ and with nothing set the app uses demo data and says so in the results header.
 
 ### Checking that your keys took effect
 
+If a live search fails with a parsing error, `/api/debug/jsearch` reports the structure of a real
+JSearch response — which endpoint answered, where the job array sits, and what fields the first record
+carries. It describes shapes rather than dumping the body, and never includes the key, so the output is
+safe to share when reporting a problem.
+
 Open `/api/status` on the running app (e.g. `https://your-app.vercel.app/api/status`). It reports which
 providers are in play and which environment variables were detected — as booleans only, never key
 values, so it is safe to open on a deployed URL and safe to paste when asking for help.
