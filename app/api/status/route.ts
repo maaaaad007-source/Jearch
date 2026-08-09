@@ -33,6 +33,7 @@ export async function GET() {
       APOLLO_API_KEY: Boolean(serverEnv.apolloKey),
       HUNTER_API_KEY: Boolean(serverEnv.hunterKey),
       JOB_PROVIDER: serverEnv.jobProviderOverride ?? null,
+      JSEARCH_PATH: process.env.JSEARCH_PATH?.trim() || null,
       CONTACT_PROVIDER: serverEnv.contactProviderOverride ?? null,
       SUPABASE: isSupabaseConfigured(),
     },

@@ -33,12 +33,12 @@ function extractDetail(body: string): string {
       (Array.isArray(parsed.errors) ? (parsed.errors[0] as Record<string, unknown>)?.details : undefined);
 
     if (typeof candidate === "string" && candidate) return candidate;
-    if (candidate && typeof candidate === "object") return JSON.stringify(candidate).slice(0, 160);
+    if (candidate && typeof candidate === "object") return JSON.stringify(candidate).slice(0, 300);
   } catch {
     // Not JSON — fall through to the raw body.
   }
 
-  return trimmed.replace(/\s+/g, " ").slice(0, 160);
+  return trimmed.replace(/\s+/g, " ").slice(0, 300);
 }
 
 function explain({ provider, kind, status, envVar, authHint }: ProviderErrorOptions): string {

@@ -3,8 +3,8 @@ import { summarizeResponsibilities } from "@/lib/text";
 import { ProviderError } from "@/lib/providers/errors";
 import { normalizeDomain } from "@/lib/utils";
 
-const ENDPOINT = "https://jsearch.p.rapidapi.com/search";
 const HOST = "jsearch.p.rapidapi.com";
+const BASE = `https://${HOST}`;
 
 interface JSearchJob {
   job_id?: string;
@@ -72,23 +72,47 @@ function matchesCompany(job: JobPost, company: string): boolean {
   return job.companyName.toLowerCase().replace(/[^a-z0-9]/g, "").includes(needle);
 }
 
-export async function searchJSearch(
-  params: SearchParams,
-  apiKey: string,
-  signal?: AbortSignal,
-): Promise<JobPost[]> {
+/**
+ * Search paths to try, newest first.
+ *
+ * JSearch has renamed its search endpoint at least once, and RapidAPI answers
+ * a retired path with a 404 rather than anything you can plan around. So the
+ * adapter probes: a 404 on one candidate falls through to the next, and the
+ * one that answers is remembered for the life of the process. `JSEARCH_PATH`
+ * overrides the list outright when a future rename outruns this default.
+ */
+const SEARCH_PATHS = ["/search-v2", "/search"];
+
+function candidatePaths(): string[] {
+  const override = process.env.JSEARCH_PATH?.trim();
+  if (override) return [override.startsWith("/") ? override : `/${override}`];
+  return SEARCH_PATHS;
+}
+
+/** Remembered across calls so the probe cost is paid once, not per search. */
+let resolvedPath: string | null = null;
+
+function buildUrl(path: string, params: SearchParams): URL {
   // JSearch takes a single free-text query with no employer filter, so the
   // company name is folded into the query and the results are filtered after.
   const query = [params.designation, params.company].filter(Boolean).join(" ").trim();
 
-  const url = new URL(ENDPOINT);
+  const url = new URL(`${BASE}${path}`);
   url.searchParams.set("query", query);
   url.searchParams.set("country", params.country.toLowerCase());
   url.searchParams.set("page", String(params.page ?? 1));
   url.searchParams.set("num_pages", "1");
   url.searchParams.set("date_posted", "month");
+  return url;
+}
 
-  const response = await fetch(url, {
+async function requestPath(
+  path: string,
+  params: SearchParams,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  return fetch(buildUrl(path, params), {
     headers: {
       "X-RapidAPI-Key": apiKey,
       "X-RapidAPI-Host": HOST,
@@ -98,6 +122,39 @@ export async function searchJSearch(
     // rate-limited RapidAPI plans.
     next: { revalidate: 300 },
   });
+}
+
+export async function searchJSearch(
+  params: SearchParams,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<JobPost[]> {
+  const paths = resolvedPath ? [resolvedPath, ...candidatePaths().filter((p) => p !== resolvedPath)] : candidatePaths();
+
+  let response: Response | null = null;
+  let usedPath = paths[0];
+
+  for (const path of paths) {
+    const attempt = await requestPath(path, params, apiKey, signal);
+
+    // Only a 404 means "wrong path" — every other status is a real answer
+    // about this request and must not be retried against another endpoint.
+    if (attempt.status === 404 && paths.length > 1) continue;
+
+    response = attempt;
+    usedPath = path;
+    break;
+  }
+
+  if (!response) {
+    throw new ProviderError({
+      provider: "JSearch",
+      kind: "jobs",
+      status: 404,
+      body: `None of the known search endpoints exist on this API (tried ${paths.join(", ")}). Open the JSearch page on RapidAPI, copy the path from its code snippet, and set it as the JSEARCH_PATH environment variable.`,
+      envVar: "RAPIDAPI_KEY",
+    });
+  }
 
   if (!response.ok) {
     throw new ProviderError({
@@ -111,8 +168,23 @@ export async function searchJSearch(
     });
   }
 
-  const payload = (await response.json()) as { data?: JSearchJob[] };
-  const jobs = (payload.data ?? []).map(mapJSearchJob);
+  resolvedPath = usedPath;
 
+  const payload = (await response.json()) as { data?: JSearchJob[]; jobs?: JSearchJob[] };
+  const raw = payload.data ?? payload.jobs;
+
+  // A success with no recognisable list means the response shape changed.
+  // Saying so beats rendering "no postings matched" over a parsing failure.
+  if (!Array.isArray(raw)) {
+    throw new ProviderError({
+      provider: "JSearch",
+      kind: "jobs",
+      status: response.status,
+      body: `Unexpected response shape from ${usedPath} — no job list found. The API format may have changed.`,
+      envVar: "RAPIDAPI_KEY",
+    });
+  }
+
+  const jobs = raw.map(mapJSearchJob);
   return params.company ? jobs.filter((job) => matchesCompany(job, params.company!)) : jobs;
 }

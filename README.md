@@ -71,6 +71,7 @@ All environment variables are optional; see `.env.example` for the full list.
 | Variable | Purpose |
 | --- | --- |
 | `RAPIDAPI_KEY` | JSearch via RapidAPI |
+| `JSEARCH_PATH` | Override the JSearch endpoint path if it is renamed again (default: probes `/search-v2`, then `/search`) |
 | `THEIRSTACK_API_KEY` | TheirStack job search |
 | `APOLLO_API_KEY` | Apollo.io people search |
 | `HUNTER_API_KEY` | Hunter.io domain search |
