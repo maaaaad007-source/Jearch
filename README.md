@@ -84,7 +84,11 @@ and with nothing set the app uses demo data and says so in the results header.
 
 ### Checking that your keys took effect
 
-The results header names the providers that actually served the request, so you never have to guess:
+Open `/api/status` on the running app (e.g. `https://your-app.vercel.app/api/status`). It reports which
+providers are in play and which environment variables were detected — as booleans only, never key
+values, so it is safe to open on a deployed URL and safe to paste when asking for help.
+
+The results header names the providers that actually served the request too:
 
 - `Demo data` — no key was picked up; the app is still on sample data.
 - `Jobs: JSearch` / `Contacts: Hunter.io` — that provider answered, so the key works.

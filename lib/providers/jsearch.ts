@@ -1,5 +1,6 @@
 import type { JobPost, SearchParams, WorkType } from "@/types";
 import { summarizeResponsibilities } from "@/lib/text";
+import { ProviderError } from "@/lib/providers/errors";
 import { normalizeDomain } from "@/lib/utils";
 
 const ENDPOINT = "https://jsearch.p.rapidapi.com/search";
@@ -99,8 +100,15 @@ export async function searchJSearch(
   });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`JSearch request failed (${response.status}): ${body.slice(0, 200)}`);
+    throw new ProviderError({
+      provider: "JSearch",
+      kind: "jobs",
+      status: response.status,
+      body: await response.text().catch(() => ""),
+      envVar: "RAPIDAPI_KEY",
+      authHint:
+        "that you are actually subscribed to JSearch on RapidAPI — a key on its own is not enough, you have to click Subscribe on the API's page",
+    });
   }
 
   const payload = (await response.json()) as { data?: JSearchJob[] };

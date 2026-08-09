@@ -1,5 +1,6 @@
 import type { ContactPerson, VerificationStatus } from "@/types";
 import { HUNTER_DEPARTMENTS } from "@/lib/providers/constants";
+import { ProviderError } from "@/lib/providers/errors";
 import { titleCase } from "@/lib/utils";
 
 const ENDPOINT = "https://api.hunter.io/v2/domain-search";
@@ -75,8 +76,13 @@ export async function searchHunterContacts(
   const response = await fetch(url, { signal });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Hunter request failed (${response.status}): ${body.slice(0, 200)}`);
+    throw new ProviderError({
+      provider: "Hunter.io",
+      kind: "contacts",
+      status: response.status,
+      body: await response.text().catch(() => ""),
+      envVar: "HUNTER_API_KEY",
+    });
   }
 
   const payload = (await response.json()) as HunterResponse;

@@ -1,5 +1,6 @@
 import type { ContactPerson, VerificationStatus } from "@/types";
 import { DECISION_MAKER_TITLES } from "@/lib/providers/constants";
+import { ProviderError } from "@/lib/providers/errors";
 import { normalizeDomain } from "@/lib/utils";
 
 const ENDPOINT = "https://api.apollo.io/api/v1/mixed_people/search";
@@ -85,8 +86,14 @@ export async function searchApolloContacts(
   });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Apollo request failed (${response.status}): ${body.slice(0, 200)}`);
+    throw new ProviderError({
+      provider: "Apollo.io",
+      kind: "contacts",
+      status: response.status,
+      body: await response.text().catch(() => ""),
+      envVar: "APOLLO_API_KEY",
+      authHint: "that your Apollo plan includes API access — people search is restricted on some tiers",
+    });
   }
 
   const payload = (await response.json()) as { people?: ApolloPerson[]; contacts?: ApolloPerson[] };

@@ -1,5 +1,6 @@
 import type { JobPost, SearchParams, WorkType } from "@/types";
 import { summarizeResponsibilities } from "@/lib/text";
+import { ProviderError } from "@/lib/providers/errors";
 import { normalizeDomain } from "@/lib/utils";
 
 const ENDPOINT = "https://api.theirstack.com/v1/jobs/search";
@@ -102,8 +103,13 @@ export async function searchTheirStack(
   });
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`TheirStack request failed (${response.status}): ${body.slice(0, 200)}`);
+    throw new ProviderError({
+      provider: "TheirStack",
+      kind: "jobs",
+      status: response.status,
+      body: await response.text().catch(() => ""),
+      envVar: "THEIRSTACK_API_KEY",
+    });
   }
 
   const payload = (await response.json()) as { data?: TheirStackJob[] };
