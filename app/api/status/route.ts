@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   configWarnings,
   isSupabaseConfigured,
+  providerEnvNamesSeen,
   resolveContactProvider,
   resolveJobProvider,
   serverEnv,
@@ -50,6 +51,8 @@ export async function GET(request: Request) {
     contactProvider,
     jobSourcesFor: { country, order: jobProviderChain(country) },
     warnings: configWarnings(),
+    // Names only, never values — a typo is visible here and nowhere else.
+    providerVariablesPresent: providerEnvNamesSeen(),
     usingDemoData: jobProvider === "demo" || contactProvider === "demo",
     environmentVariablesDetected: {
       RAPIDAPI_KEY: Boolean(serverEnv.jsearchKey),

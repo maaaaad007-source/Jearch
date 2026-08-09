@@ -7,9 +7,49 @@
 export type JobProvider = "jobtech" | "adzuna" | "jsearch" | "theirstack" | "serper" | "demo";
 export type ContactProvider = "apollo" | "hunter" | "serper" | "demo";
 
+/** `ADZUNA_APP_KEY`, `adzuna-app-key` and `AdzunaAppKey` all reduce to this. */
+function canonical(name: string): string {
+  return name.replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+/**
+ * Environment lookup that forgives how the name was typed.
+ *
+ * A key rejected over a hyphen instead of an underscore, or lowercase instead
+ * of upper, is indistinguishable from a key that was never set — and costs a
+ * redeploy to discover. Matching on the canonical form removes that whole
+ * class of failure, at the cost of one lazy pass over process.env.
+ */
+let canonicalEnv: Map<string, string> | null = null;
+
+function envByCanonicalName(): Map<string, string> {
+  if (canonicalEnv) return canonicalEnv;
+
+  canonicalEnv = new Map();
+  for (const [name, value] of Object.entries(process.env)) {
+    if (typeof value === "string" && value.trim()) {
+      canonicalEnv.set(canonical(name), value.trim());
+    }
+  }
+  return canonicalEnv;
+}
+
 function read(name: string): string | undefined {
-  const value = process.env[name];
-  return value && value.trim() ? value.trim() : undefined;
+  const exact = process.env[name];
+  if (exact && exact.trim()) return exact.trim();
+
+  return envByCanonicalName().get(canonical(name));
+}
+
+/**
+ * Provider-related variable names present in the environment, so a typo is
+ * visible rather than inferred. Names only — never values, so this is safe to
+ * share when reporting a problem.
+ */
+export function providerEnvNamesSeen(): string[] {
+  return Object.keys(process.env)
+    .filter((name) => /adzuna|serper|jobtech|hunter|apollo|rapidapi|jsearch|theirstack|supabase/i.test(name))
+    .sort();
 }
 
 export const serverEnv = {
