@@ -6,12 +6,14 @@ import {
   type ContactProvider,
   type JobProvider,
 } from "@/lib/env";
+import { companyKey, slugifyCompany, type CompanyRef } from "@/lib/company";
 import { scoreTitle } from "@/lib/providers/constants";
 import { demoContacts, demoJobs } from "@/lib/providers/demo";
 import { searchJSearch } from "@/lib/providers/jsearch";
 import { PAGE_SIZE as THEIRSTACK_PAGE_SIZE, searchTheirStack } from "@/lib/providers/theirstack";
 import { searchApolloContacts } from "@/lib/providers/apollo";
 import { searchHunterContacts } from "@/lib/providers/hunter";
+import { searchSerperContacts, searchSerperJobs } from "@/lib/providers/serper";
 
 export interface JobSearchResult {
   jobs: JobPost[];
@@ -48,6 +50,12 @@ export async function findJobs(params: SearchParams, signal?: AbortSignal): Prom
     return { jobs, provider, demo: false, hasMore: jobs.length >= THEIRSTACK_PAGE_SIZE };
   }
 
+  if (provider === "serper") {
+    const jobs = await searchSerperJobs(params, serverEnv.serperKey!, signal);
+    // A Google page holds ~10 usable results; a full one implies another.
+    return { jobs, provider, demo: false, hasMore: jobs.length >= 8 };
+  }
+
   const { jobs, hasMore } = demoJobs(params);
   return { jobs, provider: "demo", demo: true, hasMore };
 }
@@ -73,38 +81,64 @@ export function rankContacts(contacts: ContactPerson[]): ContactPerson[] {
   });
 }
 
-async function fetchForDomain(
+/**
+ * Apollo and Hunter look a company up by website; Serper looks it up by name.
+ * A job source that supplies no domain (LinkedIn results via Serper, say) is
+ * therefore still enrichable — but only by a provider that does not need one.
+ */
+class MissingDomainError extends Error {
+  constructor(provider: string) {
+    super(
+      `${provider} needs a company website to find contacts, and this posting did not include one. Switch CONTACT_PROVIDER to serper, which searches by company name instead.`,
+    );
+    this.name = "MissingDomainError";
+  }
+}
+
+async function fetchForCompany(
   provider: ContactProvider,
-  domain: string,
-  companyName: string | undefined,
+  company: CompanyRef,
   signal?: AbortSignal,
 ): Promise<ContactPerson[]> {
-  if (provider === "apollo") return searchApolloContacts(domain, serverEnv.apolloKey!, signal);
-  if (provider === "hunter") return searchHunterContacts(domain, serverEnv.hunterKey!, signal);
-  return demoContacts(domain, companyName);
+  if (provider === "serper") {
+    return searchSerperContacts(company, serverEnv.serperKey!, signal);
+  }
+
+  if (provider === "apollo") {
+    if (!company.domain) throw new MissingDomainError("Apollo.io");
+    return searchApolloContacts(company.domain, serverEnv.apolloKey!, signal);
+  }
+
+  if (provider === "hunter") {
+    if (!company.domain) throw new MissingDomainError("Hunter.io");
+    return searchHunterContacts(company.domain, serverEnv.hunterKey!, signal);
+  }
+
+  return demoContacts(company.domain ?? slugifyCompany(company.companyName), company.companyName);
 }
 
 /**
- * Enrich a batch of company domains in parallel.
+ * Enrich a batch of companies in parallel.
  *
  * Enrichment APIs are per-credit and rate limited, so callers pass in a
- * deduplicated domain list and one failing domain never fails the batch — the
- * card for that company simply renders without a contact.
+ * deduplicated list and one failing company never fails the batch — the card
+ * for that employer simply renders without a contact.
  */
 export async function findContacts(
-  domains: Array<{ domain: string; companyName?: string }>,
+  companies: CompanyRef[],
   signal?: AbortSignal,
 ): Promise<ContactSearchResult> {
   const provider = resolveContactProvider();
-  const unique = new Map<string, string | undefined>();
-  for (const entry of domains) {
-    if (entry.domain && !unique.has(entry.domain)) unique.set(entry.domain, entry.companyName);
+  const unique = new Map<string, CompanyRef>();
+  for (const entry of companies) {
+    const key = companyKey(entry);
+    if (!unique.has(key)) unique.set(key, entry);
   }
 
   const results = await Promise.allSettled(
-    [...unique.entries()].map(async ([domain, companyName]) => {
-      const contacts = await fetchForDomain(provider, domain, companyName, signal);
-      return [domain, rankContacts(contacts)] as const;
+    [...unique.entries()].map(async ([key, company]) => {
+      const contacts = await fetchForCompany(provider, company, signal);
+      return [key, rankContacts(contacts)] as const;
     }),
   );
 
@@ -113,8 +147,8 @@ export async function findContacts(
 
   for (const result of results) {
     if (result.status === "fulfilled") {
-      const [domain, contacts] = result.value;
-      contactsByDomain[domain] = contacts;
+      const [key, contacts] = result.value;
+      contactsByDomain[key] = contacts;
     } else {
       console.error("[contacts] enrichment failed:", result.reason);
       failures.push(result.reason instanceof Error ? result.reason.message : String(result.reason));

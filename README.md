@@ -31,8 +31,8 @@ To go live, copy `.env.example` to `.env.local` and fill in at least one job key
 | Styling | Tailwind CSS v4 + Shadcn-style UI primitives on Radix |
 | UI state | Zustand |
 | Persistence | Zustand `persist` → `localStorage`, optionally mirrored to Supabase |
-| Job search | JSearch (RapidAPI) or TheirStack |
-| Contact enrichment | Apollo.io or Hunter.io |
+| Job search | JSearch (RapidAPI), TheirStack, or LinkedIn via Serper |
+| Contact enrichment | Serper (LinkedIn), Apollo.io, or Hunter.io |
 
 ---
 
@@ -73,15 +73,41 @@ All environment variables are optional; see `.env.example` for the full list.
 | `RAPIDAPI_KEY` | JSearch via RapidAPI |
 | `JSEARCH_PATH` | Override the JSearch endpoint path if it is renamed again (default: probes `/search-v2`, then `/search`) |
 | `THEIRSTACK_API_KEY` | TheirStack job search |
+| `SERPER_API_KEY` | Serper — powers both LinkedIn job listings and LinkedIn contact lookup |
+| `SERPER_RESOLVE_DOMAINS` | `false` skips the extra credit spent resolving a company's website (default: resolve) |
 | `APOLLO_API_KEY` | Apollo.io people search |
 | `HUNTER_API_KEY` | Hunter.io domain search |
-| `JOB_PROVIDER` | Pin the job provider: `jsearch` \| `theirstack` \| `demo` |
-| `CONTACT_PROVIDER` | Pin the contact provider: `apollo` \| `hunter` \| `demo` |
+| `JOB_PROVIDER` | Pin the job provider: `jsearch` \| `theirstack` \| `serper` \| `demo` |
+| `CONTACT_PROVIDER` | Pin the contact provider: `serper` \| `apollo` \| `hunter` \| `demo` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (optional sync) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (optional sync) |
 
-Provider selection falls back gracefully: whichever key is present wins (JSearch and Apollo preferred),
-and with nothing set the app uses demo data and says so in the results header.
+Provider selection falls back gracefully: whichever key is present wins, and with nothing set the app
+uses demo data and says so in the results header. For contacts, Serper is preferred when available — it
+costs a fraction of the enrichment vendors and works from a company name alone, so it returns something
+for employers the domain-based services have never indexed.
+
+### Pulling LinkedIn listings
+
+LinkedIn has no public jobs API, and scraping it directly breaches their terms. What works instead is
+Google: LinkedIn job pages are indexed, and their titles follow a fixed shape
+(`Acme hiring Senior UX Designer in Amsterdam | LinkedIn`). With `SERPER_API_KEY` set and
+`JOB_PROVIDER=serper`, the app runs a `site:linkedin.com/jobs/view` search through Serper and parses
+those titles into postings — real LinkedIn listings, one credit per search, no scraping.
+
+The trade-off is what a search result contains: title, company, location, a snippet and the LinkedIn
+URL — but no salary and no employer website. The contact side compensates by looking companies up by
+name.
+
+### What Serper can and cannot give you for contacts
+
+Serper finds the *person*: name, role, and LinkedIn profile URL, by searching LinkedIn profiles at the
+company for decision-maker titles. It cannot verify an email, because a search engine has no way to.
+
+When the company's domain is known — or resolvable with one extra credit — a pattern address
+(`first.last@domain`) is offered and always labelled **Guess / Unverified**, with the source line saying
+so outright. If you need verified addresses, that is what Hunter and Apollo are for; the two can be
+combined by setting `JOB_PROVIDER=serper` with `CONTACT_PROVIDER=hunter`.
 
 ### Checking that your keys took effect
 

@@ -4,8 +4,8 @@
  * a fresh clone runs with `npm run dev` and nothing else.
  */
 
-export type JobProvider = "jsearch" | "theirstack" | "demo";
-export type ContactProvider = "apollo" | "hunter" | "demo";
+export type JobProvider = "jsearch" | "theirstack" | "serper" | "demo";
+export type ContactProvider = "apollo" | "hunter" | "serper" | "demo";
 
 function read(name: string): string | undefined {
   const value = process.env[name];
@@ -24,6 +24,9 @@ export const serverEnv = {
   },
   get hunterKey() {
     return read("HUNTER_API_KEY");
+  },
+  get serperKey() {
+    return read("SERPER_API_KEY");
   },
   get supabaseUrl() {
     return read("NEXT_PUBLIC_SUPABASE_URL");
@@ -45,9 +48,11 @@ export function resolveJobProvider(): JobProvider {
   if (override === "demo") return "demo";
   if (override === "jsearch" && serverEnv.jsearchKey) return "jsearch";
   if (override === "theirstack" && serverEnv.theirstackKey) return "theirstack";
+  if (override === "serper" && serverEnv.serperKey) return "serper";
 
   if (serverEnv.jsearchKey) return "jsearch";
   if (serverEnv.theirstackKey) return "theirstack";
+  if (serverEnv.serperKey) return "serper";
   return "demo";
 }
 
@@ -56,7 +61,12 @@ export function resolveContactProvider(): ContactProvider {
   if (override === "demo") return "demo";
   if (override === "apollo" && serverEnv.apolloKey) return "apollo";
   if (override === "hunter" && serverEnv.hunterKey) return "hunter";
+  if (override === "serper" && serverEnv.serperKey) return "serper";
 
+  // Serper is preferred when present: it costs a fraction of the enrichment
+  // vendors and works from a company name alone, so it returns something for
+  // employers the domain-based services have never heard of.
+  if (serverEnv.serperKey) return "serper";
   if (serverEnv.apolloKey) return "apollo";
   if (serverEnv.hunterKey) return "hunter";
   return "demo";

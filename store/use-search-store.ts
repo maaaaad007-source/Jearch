@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 
+import { companyKey } from "@/lib/company";
 import { DEFAULT_COUNTRY } from "@/lib/countries";
 import type { ContactPerson, ContactsApiResponse, JobWithContact, JobsApiResponse } from "@/types";
 
@@ -56,7 +57,7 @@ async function fetchJobs(query: Query, page: number): Promise<JobsApiResponse> {
 }
 
 async function fetchContacts(
-  companies: Array<{ domain: string; companyName: string }>,
+  companies: Array<{ domain: string | null; companyName: string }>,
 ): Promise<ContactsApiResponse> {
   const response = await fetch("/api/contacts", {
     method: "POST",
@@ -76,8 +77,12 @@ function toPendingResults(payload: JobsApiResponse): JobWithContact[] {
   }));
 }
 
-const NO_DOMAIN = "No company website on this posting, so we could not look up contacts.";
 const NO_CONTACT = "No decision maker found for this company.";
+
+/** Matches the server's keying so a card can find its own contacts. */
+function keyForJob(job: { companyName: string; companyDomain: string | null }): string {
+  return companyKey({ companyName: job.companyName, domain: job.companyDomain });
+}
 
 function applyContacts(
   results: JobWithContact[],
@@ -86,16 +91,15 @@ function applyContacts(
   batchError: string | null,
 ): JobWithContact[] {
   return results.map((result) => {
-    const domain = result.job.companyDomain;
-    if (!domain) return { ...result, contactError: NO_DOMAIN };
+    const key = keyForJob(result.job);
 
-    const contacts = contactsByDomain[domain];
+    const contacts = contactsByDomain[key];
     if (!contacts) {
       // The whole batch failed — say so, rather than letting a bad API key
       // masquerade as "this company has nobody".
-      if (batchError && batchDomains.has(domain)) return { ...result, contactError: batchError };
+      if (batchError && batchDomains.has(key)) return { ...result, contactError: batchError };
 
-      // Otherwise this domain was not part of this batch; leave whatever the
+      // Otherwise this company was not part of this batch; leave whatever the
       // card already had rather than blanking an earlier result.
       return result;
     }
@@ -239,29 +243,30 @@ async function enrich(set: Setter, get: Getter, pending: JobWithContact[], jobsA
   const alreadyEnriched = new Set(
     get()
       .results.filter((result) => result.contact || result.contactError)
-      .map((result) => result.job.companyDomain),
+      .map((result) => keyForJob(result.job)),
   );
 
+  const seen = new Set<string>();
   const companies = pending
-    .filter((result) => result.job.companyDomain && !alreadyEnriched.has(result.job.companyDomain))
+    .filter((result) => {
+      const key = keyForJob(result.job);
+      if (alreadyEnriched.has(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .map((result) => ({
-      domain: result.job.companyDomain as string,
+      domain: result.job.companyDomain,
       companyName: result.job.companyName,
     }));
 
   if (companies.length === 0) {
-    set({
-      status: "success",
-      results: get().results.map((result) =>
-        result.job.companyDomain ? result : { ...result, contactError: NO_DOMAIN },
-      ),
-    });
+    set({ status: "success" });
     return;
   }
 
   try {
     const payload = await fetchContacts(companies);
-    const batchDomains = new Set(companies.map((company) => company.domain));
+    const batchDomains = new Set(companies.map((company) => companyKey(company)));
 
     set({
       status: "success",

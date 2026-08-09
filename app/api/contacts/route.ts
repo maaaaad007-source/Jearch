@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { findContacts } from "@/lib/providers";
+import type { CompanyRef } from "@/lib/company";
 import { normalizeDomain } from "@/lib/utils";
 import type { ContactsApiResponse } from "@/types";
 
@@ -18,11 +19,13 @@ const bodySchema = z.object({
   companies: z
     .array(
       z.object({
-        domain: z.string().trim().min(3),
-        companyName: z.string().trim().optional(),
+        // Optional: search-based enrichment works from the name alone, and job
+        // sources like LinkedIn-via-Serper never supply a website.
+        domain: z.string().trim().optional().nullable(),
+        companyName: z.string().trim().min(1, "A company name is required"),
       }),
     )
-    .min(1, "At least one company domain is required")
+    .min(1, "At least one company is required")
     .max(50),
 });
 
@@ -42,15 +45,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const companies: Array<{ domain: string; companyName?: string }> = [];
+  const companies: CompanyRef[] = [];
   for (const company of parsed.data.companies) {
-    const domain = normalizeDomain(company.domain);
-    if (domain) companies.push({ domain, companyName: company.companyName });
+    companies.push({
+      companyName: company.companyName,
+      domain: normalizeDomain(company.domain),
+    });
     if (companies.length >= MAX_DOMAINS) break;
-  }
-
-  if (companies.length === 0) {
-    return NextResponse.json({ error: "No resolvable company domains in request" }, { status: 400 });
   }
 
   try {

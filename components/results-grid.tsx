@@ -9,11 +9,17 @@ import { Button } from "@/components/ui/button";
 import { countryName } from "@/lib/countries";
 import { useSearchStore } from "@/store/use-search-store";
 
-const PROVIDER_LABELS: Record<string, string> = {
+const JOB_PROVIDER_LABELS: Record<string, string> = {
   jsearch: "JSearch",
   theirstack: "TheirStack",
+  serper: "LinkedIn via Serper",
+  demo: "Demo data",
+};
+
+const CONTACT_PROVIDER_LABELS: Record<string, string> = {
   apollo: "Apollo.io",
   hunter: "Hunter.io",
+  serper: "LinkedIn via Serper",
   demo: "Demo data",
 };
 
@@ -95,9 +101,9 @@ export function ResultsGrid() {
               Demo data
             </Badge>
           )}
-          {jobProvider && <Badge variant="muted">Jobs: {PROVIDER_LABELS[jobProvider] ?? jobProvider}</Badge>}
+          {jobProvider && <Badge variant="muted">Jobs: {JOB_PROVIDER_LABELS[jobProvider] ?? jobProvider}</Badge>}
           {contactProvider && (
-            <Badge variant="muted">Contacts: {PROVIDER_LABELS[contactProvider] ?? contactProvider}</Badge>
+            <Badge variant="muted">Contacts: {CONTACT_PROVIDER_LABELS[contactProvider] ?? contactProvider}</Badge>
           )}
         </div>
       </div>
