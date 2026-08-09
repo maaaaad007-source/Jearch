@@ -255,6 +255,10 @@ async function enrich(set: Setter, get: Getter, pending: JobWithContact[], jobsA
   const seen = new Set<string>();
   const companies = pending
     .filter((result) => {
+      // A posting whose employer could not be parsed has nothing to look up,
+      // and searching for "Unknown company" would burn a credit on nonsense.
+      if (!result.job.companyName || /^unknown company$/i.test(result.job.companyName)) return false;
+
       const key = keyForJob(result.job);
       if (alreadyEnriched.has(key) || seen.has(key)) return false;
       seen.add(key);
@@ -266,7 +270,14 @@ async function enrich(set: Setter, get: Getter, pending: JobWithContact[], jobsA
     }));
 
   if (companies.length === 0) {
-    set({ status: "success" });
+    set({
+      status: "success",
+      results: get().results.map((result) =>
+        result.contact || result.contactError
+          ? result
+          : { ...result, contactError: "This posting did not name an employer, so there was nobody to look up." },
+      ),
+    });
     return;
   }
 

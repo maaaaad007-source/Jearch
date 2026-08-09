@@ -94,7 +94,82 @@ const BOARDS: BoardRule[] = [
     host: /(^|\.)otta\.com$/i,
     posting: /\/jobs\/[^/?#]+/i,
   },
+  {
+    board: "Recruitee",
+    host: /(^|\.)recruitee\.com$/i,
+    posting: /\/o\/[^/?#]+/i,
+    companyFromSubdomain: true,
+  },
+  {
+    board: "Personio",
+    host: /(^|\.)(jobs\.personio\.de|jobs\.personio\.com)$/i,
+    posting: /\/job\/\d+/i,
+    companyFromSubdomain: true,
+  },
+  {
+    board: "JOIN",
+    host: /(^|\.)join\.com$/i,
+    posting: /\/companies\/[^/]+\/\d+/i,
+    company: /^\/companies\/([^/?#]+)/i,
+  },
+  {
+    board: "The Hub",
+    host: /(^|\.)thehub\.io$/i,
+    posting: /\/jobs\/[^/?#]+/i,
+  },
+  {
+    board: "Jobbsafari",
+    host: /(^|\.)jobbsafari\.[a-z.]+$/i,
+    posting: /\/jobb?\/[^/?#]+/i,
+  },
+  {
+    board: "Arbetsförmedlingen",
+    host: /(^|\.)arbetsformedlingen\.se$/i,
+    posting: /\/(annons|ad)\/[^/?#]+/i,
+  },
+  {
+    board: "Academic Work",
+    host: /(^|\.)academicwork\.[a-z.]+$/i,
+    posting: /\/(jobs?|lediga-jobb)\/[^/?#]+/i,
+  },
+  {
+    board: "Monster",
+    host: /(^|\.)monster\.[a-z.]+$/i,
+    posting: /\/job-openings?\/|\/jobb?\//i,
+  },
+  {
+    board: "StepStone",
+    host: /(^|\.)stepstone\.[a-z.]+$/i,
+    posting: /\/(stellenangebote|job)[-/]/i,
+  },
+  {
+    board: "Welcome to the Jungle",
+    host: /(^|\.)welcometothejungle\.com$/i,
+    posting: /\/jobs\/[^/?#]+/i,
+  },
+  {
+    board: "Jobylon",
+    host: /(^|\.)jobylon\.com$/i,
+    posting: /\/jobs\/\d+/i,
+  },
+  {
+    board: "Varbi",
+    host: /(^|\.)varbi\.com$/i,
+    posting: /\/(what|se)\/[^/?#]+/i,
+  },
 ];
+
+/**
+ * A last-resort shape check for boards not listed above — company career pages
+ * and regional sites this list will never fully cover. It requires both a
+ * job-ish path segment and an identifier (a numeric id or a multi-word slug),
+ * which is what separates one posting from a category page.
+ */
+const GENERIC_POSTING = /\/(jobs?|career|careers|vacancy|vacancies|position|opening|stelle|annons|lediga-jobb)\/[^/?#]*(\d{4,}|[a-z]+-[a-z]+)/i;
+
+/** Hosts that are never a job posting, whatever their path looks like. */
+const NEVER_A_POSTING =
+  /(^|\.)(wikipedia\.org|facebook\.com|twitter\.com|x\.com|instagram\.com|youtube\.com|reddit\.com|medium\.com|quora\.com|pinterest\.[a-z.]+)$/i;
 
 /** Identify a single job posting, or null when the URL is not one. */
 export function matchJobBoard(link: string): BoardMatch | null {
@@ -123,6 +198,14 @@ export function matchJobBoard(link: string): BoardMatch | null {
     return { board: rule.board, companyFromUrl: slug ? prettifySlug(slug) || null : null };
   }
 
+  // Not a board we know. Career pages on a company's own domain are worth
+  // keeping — often they are the best outreach target — so accept anything
+  // shaped like a single posting and name the host as the source.
+  if (!NEVER_A_POSTING.test(host) && GENERIC_POSTING.test(path)) {
+    const label = host.replace(/^(jobs|careers|career|apply|work|join)\./i, "");
+    return { board: label, companyFromUrl: null };
+  }
+
   return null;
 }
 
@@ -147,12 +230,24 @@ export function prettifySlug(slug: string): string {
     .join(" ");
 }
 
-/** Titles that are obviously a listing page rather than one job. */
-const LISTING_TITLE =
-  /\b(jobs?|vacancies|careers|openings|opportunities)\b.*\b(in|at|near)\b.*\b(sweden|netherlands|germany|uk|usa)\b|^\d+\s+.*\bjobs\b|\bjobs? in\b/i;
+/**
+ * Titles that are unmistakably a listing page.
+ *
+ * Deliberately narrow. "UX Designer job in Stockholm - Spotify" is a single
+ * posting, and an earlier, greedier rule that rejected any "job in" threw away
+ * most real results. The URL patterns above are the real filter; this only
+ * catches what slips past them.
+ */
+const LISTING_TITLE = [
+  // "500 UX Designer jobs in Stockholm"
+  /^\d[\d,.\s]*\s+\S/,
+  // The whole title is "<Role> Jobs in <Place>" with no employer named.
+  /^[^|\-–—:]{0,60}\bjobs\b\s+(in|near|at)\s+[^|\-–—:]{0,40}$/i,
+  /\b(browse|search results|all jobs|job search|latest jobs|top \d+)\b/i,
+];
 
 export function looksLikeListingPage(title: string): boolean {
-  return LISTING_TITLE.test(title);
+  return LISTING_TITLE.some((pattern) => pattern.test(title));
 }
 
 /**
@@ -165,16 +260,24 @@ export function looksLikeListingPage(title: string): boolean {
 export function parseBoardTitle(
   rawTitle: string,
   companyFromUrl: string | null,
+  boardName?: string,
 ): { title: string; companyName: string | null } {
+  // The board's own name is never the employer — "UX Designer | The Hub" is a
+  // posting on The Hub, not a job at The Hub.
+  const boardSuffix = boardName
+    ? new RegExp(`\\s*[|\\-–—]\\s*${boardName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i")
+    : null;
+
   const cleaned = rawTitle
-    .replace(/\s*[|\-–—]\s*(LinkedIn|Indeed|Glassdoor|Greenhouse|Lever|Workable|SmartRecruiters|Teamtailor|Otta|Workday)\s*$/i, "")
+    .replace(/\s*[|\-–—]\s*(LinkedIn|Indeed|Glassdoor|Greenhouse|Lever|Workable|SmartRecruiters|Teamtailor|Otta|Workday|Recruitee|Personio|JOIN|The Hub|Jobbsafari|Monster|StepStone)\s*$/i, "")
+    .replace(boardSuffix ?? /(?!)/, "")
     .replace(/\s*\(\s*(remote|hybrid|on-?site)\s*\)\s*$/i, "")
     .trim();
 
   // "Acme hiring Product Designer in Stockholm" (LinkedIn's shape)
   const hiring = cleaned.match(/^(?<company>.+?)\s+hiring\s+(?<role>.+?)(?:\s+in\s+.+)?$/i);
   if (hiring?.groups) {
-    return { title: hiring.groups.role.trim(), companyName: hiring.groups.company.trim() };
+    return { title: cleanRole(hiring.groups.role), companyName: hiring.groups.company.trim() };
   }
 
   // "Acme: Product Designer" puts the employer first, the opposite of the
@@ -193,10 +296,29 @@ export function parseBoardTitle(
     // Prefer the URL's employer when we have one — it is not guesswork.
     if (companyFromUrl) {
       const role = separated.find((part) => part.toLowerCase() !== companyFromUrl.toLowerCase()) ?? separated[0];
-      return { title: role, companyName: companyFromUrl };
+      return { title: cleanRole(role), companyName: companyFromUrl };
     }
-    return { title: separated[0], companyName: separated[1] };
+
+    const candidate = separated[1];
+    const isBoard = boardName && candidate.toLowerCase() === boardName.toLowerCase();
+    return { title: cleanRole(separated[0]), companyName: isBoard ? null : candidate };
   }
 
-  return { title: cleaned, companyName: companyFromUrl };
+  return { title: cleanRole(cleaned), companyName: companyFromUrl };
+}
+
+/**
+ * Trim the scaffolding boards wrap around a role: "UX Designer job in
+ * Stockholm, Sweden" and its Swedish equivalent are both just "UX Designer".
+ */
+export function cleanRole(role: string): string {
+  return role
+    .replace(/\s+jobs?\s+(in|at|near)\s+.*$/i, "")
+    .replace(/\s+jobb\s+(i|hos)\s+.*$/i, "")
+    .replace(/\s*,\s*[A-ZÅÄÖÉ][\w.'-]*(\s+[A-ZÅÄÖÉ][\w.'-]*){0,2}\s*$/u, (match) =>
+      // Only strip a trailing ", Somewhere" when it does not look like part of
+      // the role itself ("Designer, Growth" should survive).
+      /\b(growth|platform|product|design|research|engineering|marketing|data|brand|content)\b/i.test(match) ? match : "",
+    )
+    .trim();
 }

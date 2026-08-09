@@ -125,6 +125,10 @@ combined by setting `JOB_PROVIDER=serper` with `CONTACT_PROVIDER=hunter`.
 
 ### Checking that your keys took effect
 
+`/api/debug/serper?designation=UX+Designer&country=SE` runs a real search and reports every result with
+a verdict — kept as a posting, or rejected and why. When a search returns nothing, that is what separates
+"Google found nothing" from "the filters discarded everything", which look identical from the outside.
+
 If a live search fails with a parsing error, `/api/debug/jsearch` reports the structure of a real
 JSearch response — which endpoint answered, where the job array sits, and what fields the first record
 carries. It describes shapes rather than dumping the body, and never includes the key, so the output is

@@ -286,7 +286,7 @@ export function mapBoardResult(result: SerperOrganicResult, fallbackCountry: str
   const rawTitle = result.title ?? "";
   if (!rawTitle || looksLikeListingPage(rawTitle)) return null;
 
-  const parsed = parseBoardTitle(rawTitle, match.companyFromUrl);
+  const parsed = parseBoardTitle(rawTitle, match.companyFromUrl, match.board);
   if (!parsed.title) return null;
 
   const snippet = result.snippet ?? "";
