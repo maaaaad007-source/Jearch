@@ -8,6 +8,7 @@ import {
   looksLikeListingPage,
   matchJobBoard,
   parseBoardTitle,
+  isJobBoardHost,
   sanitizeCompanyName,
 } from "@/lib/providers/job-boards";
 import { truncate } from "@/lib/text";
@@ -28,6 +29,9 @@ import { truncate } from "@/lib/text";
  */
 
 const DEFAULT_ENDPOINT = "https://google.serper.dev/search";
+
+/** Below this, one more untargeted query is worth the extra credit. */
+const MIN_RESULTS_BEFORE_TOPUP = 6;
 
 /** Overridable so the pipeline can be exercised end to end against a stub. */
 function endpoint(): string {
@@ -363,14 +367,35 @@ export async function searchSerperJobs(
   // The angles overlap by design, so the same posting arrives more than once;
   // the posting id is the stable identity.
   const seen = new Set<string>();
-  const unique = jobs.filter((job) => (seen.has(job.id) ? false : (seen.add(job.id), true)));
+  let unique = jobs.filter((job) => (seen.has(job.id) ? false : (seen.add(job.id), true)));
+
+  // Filtering is strict, so a narrow market can leave very little. One plain
+  // query with no board steer costs a credit and often adds several more.
+  if (unique.length < MIN_RESULTS_BEFORE_TOPUP) {
+    const topUp = await searchWithFallback(
+      { precise: [...subject, country, "jobs"].join(" "), plain: [...subject, country, "jobs"].join(" ") },
+      apiKey,
+      { country: params.country, page: params.page, num: 20, kind: "jobs" },
+      signal,
+    ).catch(() => [] as SerperOrganicResult[]);
+
+    for (const result of topUp) {
+      const job = mapBoardResult(result, country, designation);
+      if (job && !seen.has(job.id)) {
+        seen.add(job.id);
+        unique.push(job);
+      }
+    }
+  }
 
   // Named employers first — those are the ones a contact can be found for.
-  return unique.sort((a, b) => {
+  unique = unique.sort((a, b) => {
     const named = Number(b.companyName !== "Unknown company") - Number(a.companyName !== "Unknown company");
     if (named !== 0) return named;
     return (b.postedAt ?? "").localeCompare(a.postedAt ?? "");
   });
+
+  return unique;
 }
 
 // --- Decision makers --------------------------------------------------------
@@ -521,6 +546,9 @@ export async function resolveCompanyDomain(
     }
 
     if (NON_COMPANY_HOSTS.some((blocked) => host === blocked || host.endsWith(`.${blocked}`))) continue;
+    // An ATS careers page is not the employer's domain. Guessing an address
+    // there would produce mail nobody at the company receives.
+    if (isJobBoardHost(host)) continue;
     return host;
   }
 

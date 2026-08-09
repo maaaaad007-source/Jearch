@@ -171,6 +171,20 @@ const GENERIC_POSTING = /\/(jobs?|career|careers|vacancy|vacancies|position|open
 const NEVER_A_POSTING =
   /(^|\.)(wikipedia\.org|facebook\.com|twitter\.com|x\.com|instagram\.com|youtube\.com|reddit\.com|medium\.com|quora\.com|pinterest\.[a-z.]+)$/i;
 
+/**
+ * Is this host a job board or applicant-tracking system rather than a
+ * company's own website?
+ *
+ * Domain resolution needs this: searching "Mt3 official website" ranks the
+ * company's Teamtailor careers page, and accepting it would build addresses at
+ * `mt3.teamtailor.com` — the ATS vendor's domain, where no mail from that
+ * company is ever read.
+ */
+export function isJobBoardHost(host: string): boolean {
+  const clean = host.replace(/^www\./i, "").toLowerCase();
+  return BOARDS.some((rule) => rule.host.test(clean));
+}
+
 /** Identify a single job posting, or null when the URL is not one. */
 export function matchJobBoard(link: string): BoardMatch | null {
   let url: URL;
