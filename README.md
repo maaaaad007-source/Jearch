@@ -104,9 +104,19 @@ Google: LinkedIn job pages are indexed, and their titles follow a fixed shape
 `JOB_PROVIDER=serper`, the app runs a `site:linkedin.com/jobs/view` search through Serper and parses
 those titles into postings — real LinkedIn listings, one credit per search, no scraping.
 
-The trade-off is what a search result contains: title, company, location, a snippet and the LinkedIn
-URL — but no salary and no employer website. The contact side compensates by looking companies up by
-name.
+The trade-off is what a search result contains: title, company, location, a snippet and the posting URL
+— but no salary and no employer website. The contact side compensates by looking companies up by name.
+
+**One search runs three queries**, angled differently — LinkedIn, the applicant-tracking systems, and a
+plain careers search — because a single page of Google leaves only a handful of postings once filtered.
+The results are merged and deduplicated, and employers whose name could be read are listed first. That
+costs three credits per search rather than one.
+
+Quality gates run over everything that comes back, because a search engine returns portals as readily as
+postings. A role has to echo what was searched for (an aggregator titled "Jobs in Stockholm" is not a UX
+Designer role), and an employer name that is really a country, a city, a work arrangement or a sentence
+fragment is discarded rather than shown — it would otherwise feed the contact lookup and produce a
+guessed address at a nonsense domain.
 
 **Free Serper accounts reject operator queries** (`Query pattern not allowed for free accounts`), and
 `site:` is exactly what the precise search uses. The adapter detects that rejection and retries with a

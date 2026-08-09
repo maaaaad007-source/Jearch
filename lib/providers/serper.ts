@@ -3,7 +3,13 @@ import { slugifyCompany } from "@/lib/company";
 import { countryName } from "@/lib/countries";
 import { ProviderError } from "@/lib/providers/errors";
 import { DECISION_MAKER_TITLES } from "@/lib/providers/constants";
-import { matchJobBoard, looksLikeListingPage, parseBoardTitle } from "@/lib/providers/job-boards";
+import {
+  isPlausibleRole,
+  looksLikeListingPage,
+  matchJobBoard,
+  parseBoardTitle,
+  sanitizeCompanyName,
+} from "@/lib/providers/job-boards";
 import { truncate } from "@/lib/text";
 
 /**
@@ -238,39 +244,6 @@ export function parseRelativeDate(value: string | undefined, now = Date.now()): 
   return new Date(now - amount * unitMs[match[2].toLowerCase()]).toISOString();
 }
 
-export function mapSerperJob(result: SerperOrganicResult, fallbackCountry: string): JobPost | null {
-  const link = result.link ?? "";
-  if (!/linkedin\.com\/jobs\/view\//i.test(link)) return null;
-
-  const parsed = parseLinkedInJobTitle(result.title ?? "");
-  if (!parsed.title) return null;
-
-  const { city, country } = splitLocation(parsed.location);
-  const snippet = result.snippet ?? "";
-
-  // Strip tracking params so the same posting is one job, not several.
-  const cleanLink = link.split("?")[0];
-
-  return {
-    id: `serper:${linkedInJobId(link) ?? cleanLink}`,
-    title: parsed.title,
-    companyName: parsed.companyName ?? "Unknown company",
-    // A Google result exposes no company website; contact lookup falls back to
-    // searching by company name, which is what Serper enrichment wants anyway.
-    companyDomain: null,
-    companyLogoUrl: null,
-    city,
-    country: country ?? fallbackCountry,
-    workType: inferWorkType(`${parsed.title} ${snippet}`),
-    salary: null,
-    postedAt: parseRelativeDate(result.date),
-    applyUrl: cleanLink,
-    summary: snippet ? truncate(snippet, 320) : "No description available in the search result.",
-    description: snippet || null,
-    source: "LinkedIn via Serper",
-  };
-}
-
 /**
  * Map any recognised job-board result into a posting.
  *
@@ -278,7 +251,11 @@ export function mapSerperJob(result: SerperOrganicResult, fallbackCountry: strin
  * ranks, so a posting is identified by its URL shape on a known board rather
  * than by host alone. Listing pages are rejected — a card must be one job.
  */
-export function mapBoardResult(result: SerperOrganicResult, fallbackCountry: string): JobPost | null {
+export function mapBoardResult(
+  result: SerperOrganicResult,
+  fallbackCountry: string,
+  designation = "",
+): JobPost | null {
   const link = result.link ?? "";
   const match = matchJobBoard(link);
   if (!match) return null;
@@ -289,6 +266,12 @@ export function mapBoardResult(result: SerperOrganicResult, fallbackCountry: str
   const parsed = parseBoardTitle(rawTitle, match.companyFromUrl, match.board);
   if (!parsed.title) return null;
 
+  // Aggregator pages parse into a "role" that is really the site's own name,
+  // so the role has to look like the job that was searched for.
+  if (!isPlausibleRole(parsed.title, designation)) return null;
+
+  // `location` is computed below; sanitising happens after it is known.
+
   const snippet = result.snippet ?? "";
   const cleanLink = link.split("?")[0];
 
@@ -296,11 +279,12 @@ export function mapBoardResult(result: SerperOrganicResult, fallbackCountry: str
   // filter the user chose is the honest fallback.
   const location = rawTitle.match(/\s+in\s+(.+?)(?:\s*[|\-–—]\s*\w+)?$/i)?.[1] ?? null;
   const { city, country } = splitLocation(location);
+  const companyName = sanitizeCompanyName(parsed.companyName, fallbackCountry, location ?? city);
 
   return {
     id: `serper:${linkedInJobId(link) ?? cleanLink}`,
     title: parsed.title,
-    companyName: parsed.companyName ?? "Unknown company",
+    companyName: companyName ?? "Unknown company",
     // Search results expose no employer website; contact lookup falls back to
     // searching by company name, which is what Serper enrichment wants anyway.
     companyDomain: null,
@@ -324,6 +308,7 @@ export async function searchSerperJobs(
 ): Promise<JobPost[]> {
   const subject = [params.designation, params.company].filter(Boolean);
   const country = countryName(params.country);
+  const designation = params.designation ?? "";
 
   const precise = [
     "site:linkedin.com/jobs/view",
@@ -331,44 +316,61 @@ export async function searchSerperJobs(
     country,
   ].join(" ");
 
-  // "hiring" is the word in every LinkedIn job page title ("Acme hiring
-  // Product Designer in Stockholm"), so it steers a plain query towards
-  // individual postings rather than the search pages Google ranks for
-  // "linkedin jobs".
-  const plain = [...subject, "jobs", country, "linkedin hiring apply"].join(" ");
+  /**
+   * One query returns one page of Google, which after filtering leaves only a
+   * handful of real postings. Several differently-angled queries — LinkedIn,
+   * the applicant-tracking systems, and a plain careers search — surface
+   * different employers, and merging them is what makes a result set worth
+   * scrolling. Each costs one credit, which is the trade being made.
+   */
+  const anglings = [
+    // "hiring" is the word in every LinkedIn job page title.
+    [...subject, "jobs", country, "linkedin hiring"].join(" "),
+    // The ATS platforms companies host their own listings on.
+    [...subject, country, "jobs greenhouse lever teamtailor workday apply"].join(" "),
+    // Plain careers search: company career pages and regional boards.
+    [...subject, "jobs", country, "apply careers vacancy"].join(" "),
+  ];
 
-  const results = await searchWithFallback(
-    { precise, plain },
-    apiKey,
-    { country: params.country, page: params.page, num: 20, recentOnly: true, kind: "jobs" },
-    signal,
+  const pages = await Promise.all(
+    anglings.map((plain, index) =>
+      searchWithFallback(
+        // Only the first angle has a precise form; the others exist because
+        // operators are unavailable.
+        { precise: index === 0 ? precise : plain, plain },
+        apiKey,
+        {
+          country: params.country,
+          page: params.page,
+          num: 20,
+          recentOnly: index === 0,
+          kind: "jobs",
+        },
+        signal,
+      ).catch((error) => {
+        // One angle failing should not lose the others.
+        console.error("[serper] angle failed:", error instanceof Error ? error.message : error);
+        return [] as SerperOrganicResult[];
+      }),
+    ),
   );
 
-  let jobs = results
-    .map((result) => mapBoardResult(result, country))
+  const jobs = pages
+    .flat()
+    .map((result) => mapBoardResult(result, country, designation))
     .filter((job): job is JobPost => job !== null);
 
-  // A LinkedIn-flavoured query that surfaced no individual postings is worth
-  // one more search without the LinkedIn steer — the applicant-tracking systems
-  // companies host their own listings on are just as useful for outreach.
-  if (jobs.length === 0) {
-    const broader = [...subject, "jobs", country, "apply careers"].join(" ");
-    const more = await searchWithFallback(
-      { precise: broader, plain: broader },
-      apiKey,
-      { country: params.country, page: params.page, num: 20, kind: "jobs" },
-      signal,
-    ).catch(() => [] as SerperOrganicResult[]);
-
-    jobs = more
-      .map((result) => mapBoardResult(result, country))
-      .filter((job): job is JobPost => job !== null);
-  }
-
-  // Google can return the same posting under several URLs; the posting id is
-  // the stable identity.
+  // The angles overlap by design, so the same posting arrives more than once;
+  // the posting id is the stable identity.
   const seen = new Set<string>();
-  return jobs.filter((job) => (seen.has(job.id) ? false : (seen.add(job.id), true)));
+  const unique = jobs.filter((job) => (seen.has(job.id) ? false : (seen.add(job.id), true)));
+
+  // Named employers first — those are the ones a contact can be found for.
+  return unique.sort((a, b) => {
+    const named = Number(b.companyName !== "Unknown company") - Number(a.companyName !== "Unknown company");
+    if (named !== 0) return named;
+    return (b.postedAt ?? "").localeCompare(a.postedAt ?? "");
+  });
 }
 
 // --- Decision makers --------------------------------------------------------

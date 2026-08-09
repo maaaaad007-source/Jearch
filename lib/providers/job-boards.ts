@@ -251,6 +251,78 @@ export function looksLikeListingPage(title: string): boolean {
 }
 
 /**
+ * Is this parsed role actually a job title?
+ *
+ * Aggregator sites title their pages after themselves ("Jobs in Stockholm -
+ * Sweden - for English Speaking Professionals"), which parses into a role that
+ * is really a site name. Requiring the role to echo what the user searched for
+ * is a blunt test, but it is the one that reliably separates a posting from a
+ * portal — and a card with the wrong title is worse than one fewer card.
+ */
+export function isPlausibleRole(role: string, designation: string): boolean {
+  const cleaned = role.trim();
+  if (!cleaned || cleaned.length > 90) return false;
+
+  // Page titles rather than roles.
+  if (/^(jobs?|careers?|vacancies|openings|opportunities|home|about|search)\b/i.test(cleaned)) return false;
+  if (/\bfor english speaking\b|\bjob (board|site|portal)\b/i.test(cleaned)) return false;
+
+  if (!designation.trim()) return true;
+
+  // Share at least one meaningful word with the search — "UX Designer" should
+  // not return "Jobs in Stockholm".
+  const significant = designation
+    .toLowerCase()
+    .split(/[^a-zà-ÿ0-9]+/)
+    // Two characters is deliberate: "UX", "QA", "PM" and "HR" carry most of
+    // the meaning in the titles people actually search for.
+    .filter((word) => word.length >= 2);
+
+  if (significant.length === 0) return true;
+
+  const haystack = cleaned.toLowerCase();
+  return significant.some((word) => haystack.includes(word));
+}
+
+/** Words that are never an employer, however the title is punctuated. */
+const NON_COMPANY_WORDS =
+  /^(jobs?|careers?|vacancies|openings|home|about|apply|remote|hybrid|on-?site|full[- ]time|part[- ]time|contract|internship|sweden|norway|denmark|finland|netherlands|germany|france|spain|italy|poland|ireland|england|scotland|europe|emea|worldwide|global|anywhere)$/i;
+
+/**
+ * Reject employer names that are really a place, a work arrangement, or a page
+ * label. A bad name is not merely cosmetic: it feeds the contact lookup and
+ * the guessed email address, so "Sweden" becomes `name@sweden.se`.
+ */
+export function sanitizeCompanyName(
+  name: string | null,
+  countryName?: string,
+  location?: string | null,
+): string | null {
+  if (!name) return null;
+
+  const raw = name.replace(/\s+/g, " ").trim();
+  // Truncated search-result text is a fragment, not a name — check before any
+  // trailing punctuation is stripped away.
+  if (/\.\.\.$|…$/.test(raw)) return null;
+
+  const cleaned = raw.replace(/[.,;:|\-–—]+$/, "").trim();
+  if (!cleaned || cleaned.length < 2 || cleaned.length > 60) return null;
+  if (NON_COMPANY_WORDS.test(cleaned)) return null;
+  if (!/[a-zà-ÿ]/i.test(cleaned)) return null;
+
+  // Sentence fragments captured by a separator ("... - for English Speaking").
+  // Articles are deliberately absent: "The Guardian" is a real employer.
+  if (/^(for|and|with|at|in|on|by|to|of)\s/i.test(cleaned)) return null;
+
+  if (countryName && cleaned.toLowerCase() === countryName.toLowerCase()) return null;
+
+  // The place the job is in is not the company hiring for it.
+  if (location && location.toLowerCase().includes(cleaned.toLowerCase())) return null;
+
+  return cleaned;
+}
+
+/**
  * Pull role and employer out of a generic job-page title.
  *
  * Boards converge on a handful of separators: "Role - Company", "Role at
@@ -313,12 +385,18 @@ export function parseBoardTitle(
  */
 export function cleanRole(role: string): string {
   return role
+    // Swedish boards prefix "vacant jobs" onto the role.
+    .replace(/^(lediga\s+(jobb|tjänster)|jobb|job|vacancy|stelle)\s*:?\s+/i, "")
     .replace(/\s+jobs?\s+(in|at|near)\s+.*$/i, "")
     .replace(/\s+jobb\s+(i|hos)\s+.*$/i, "")
     .replace(/\s*,\s*[A-ZÅÄÖÉ][\w.'-]*(\s+[A-ZÅÄÖÉ][\w.'-]*){0,2}\s*$/u, (match) =>
       // Only strip a trailing ", Somewhere" when it does not look like part of
       // the role itself ("Designer, Growth" should survive).
-      /\b(growth|platform|product|design|research|engineering|marketing|data|brand|content)\b/i.test(match) ? match : "",
+      // A trailing comma segment is a location unless it names a
+      // specialisation — "UX Designer, Payments" keeps its team.
+      /\b(growth|platform|product|design|research|engineering|marketing|data|brand|content|payments|infrastructure|mobile|web|core|ops|security|search|checkout|identity|ai|ml|cloud|api|risk|fraud)\b/i.test(match)
+        ? match
+        : "",
     )
     .trim();
 }
