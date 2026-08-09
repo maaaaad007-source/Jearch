@@ -12,7 +12,7 @@ import { useSearchStore } from "@/store/use-search-store";
 const JOB_PROVIDER_LABELS: Record<string, string> = {
   jsearch: "JSearch",
   theirstack: "TheirStack",
-  serper: "LinkedIn via Serper",
+  serper: "Job boards via Serper",
   demo: "Demo data",
 };
 

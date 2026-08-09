@@ -125,6 +125,10 @@ export function JobCard({ result, enriching }: JobCardProps) {
                 </a>
               </Button>
             )}
+
+            {/* Results can span several boards in one search, so each card
+                names where its posting came from. */}
+            <span className="ml-auto text-[11px] text-muted-foreground">{job.source}</span>
           </div>
         )}
 

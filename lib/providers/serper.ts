@@ -1,7 +1,9 @@
 import type { ContactPerson, JobPost, SearchParams, WorkType } from "@/types";
+import { slugifyCompany } from "@/lib/company";
 import { countryName } from "@/lib/countries";
 import { ProviderError } from "@/lib/providers/errors";
 import { DECISION_MAKER_TITLES } from "@/lib/providers/constants";
+import { matchJobBoard, looksLikeListingPage, parseBoardTitle } from "@/lib/providers/job-boards";
 import { truncate } from "@/lib/text";
 
 /**
@@ -269,6 +271,52 @@ export function mapSerperJob(result: SerperOrganicResult, fallbackCountry: strin
   };
 }
 
+/**
+ * Map any recognised job-board result into a posting.
+ *
+ * `site:` restricted results to LinkedIn; without it Google returns whatever
+ * ranks, so a posting is identified by its URL shape on a known board rather
+ * than by host alone. Listing pages are rejected — a card must be one job.
+ */
+export function mapBoardResult(result: SerperOrganicResult, fallbackCountry: string): JobPost | null {
+  const link = result.link ?? "";
+  const match = matchJobBoard(link);
+  if (!match) return null;
+
+  const rawTitle = result.title ?? "";
+  if (!rawTitle || looksLikeListingPage(rawTitle)) return null;
+
+  const parsed = parseBoardTitle(rawTitle, match.companyFromUrl);
+  if (!parsed.title) return null;
+
+  const snippet = result.snippet ?? "";
+  const cleanLink = link.split("?")[0];
+
+  // LinkedIn titles carry the location; other boards rarely do, so the country
+  // filter the user chose is the honest fallback.
+  const location = rawTitle.match(/\s+in\s+(.+?)(?:\s*[|\-–—]\s*\w+)?$/i)?.[1] ?? null;
+  const { city, country } = splitLocation(location);
+
+  return {
+    id: `serper:${linkedInJobId(link) ?? cleanLink}`,
+    title: parsed.title,
+    companyName: parsed.companyName ?? "Unknown company",
+    // Search results expose no employer website; contact lookup falls back to
+    // searching by company name, which is what Serper enrichment wants anyway.
+    companyDomain: null,
+    companyLogoUrl: null,
+    city,
+    country: country ?? fallbackCountry,
+    workType: inferWorkType(`${parsed.title} ${snippet}`),
+    salary: null,
+    postedAt: parseRelativeDate(result.date),
+    applyUrl: cleanLink,
+    summary: snippet ? truncate(snippet, 320) : "No description available in the search result.",
+    description: snippet || null,
+    source: `${match.board} via Serper`,
+  };
+}
+
 export async function searchSerperJobs(
   params: SearchParams,
   apiKey: string,
@@ -283,9 +331,11 @@ export async function searchSerperJobs(
     country,
   ].join(" ");
 
-  // No operators: Google still surfaces LinkedIn job pages for this, and the
-  // URL filter below discards everything that is not one.
-  const plain = ["linkedin jobs", ...subject, country].join(" ");
+  // "hiring" is the word in every LinkedIn job page title ("Acme hiring
+  // Product Designer in Stockholm"), so it steers a plain query towards
+  // individual postings rather than the search pages Google ranks for
+  // "linkedin jobs".
+  const plain = [...subject, "jobs", country, "linkedin hiring apply"].join(" ");
 
   const results = await searchWithFallback(
     { precise, plain },
@@ -294,11 +344,28 @@ export async function searchSerperJobs(
     signal,
   );
 
-  const jobs = results
-    .map((result) => mapSerperJob(result, countryName(params.country)))
+  let jobs = results
+    .map((result) => mapBoardResult(result, country))
     .filter((job): job is JobPost => job !== null);
 
-  // Google can return the same posting under several URLs; the LinkedIn id is
+  // A LinkedIn-flavoured query that surfaced no individual postings is worth
+  // one more search without the LinkedIn steer — the applicant-tracking systems
+  // companies host their own listings on are just as useful for outreach.
+  if (jobs.length === 0) {
+    const broader = [...subject, "jobs", country, "apply careers"].join(" ");
+    const more = await searchWithFallback(
+      { precise: broader, plain: broader },
+      apiKey,
+      { country: params.country, page: params.page, num: 20, kind: "jobs" },
+      signal,
+    ).catch(() => [] as SerperOrganicResult[]);
+
+    jobs = more
+      .map((result) => mapBoardResult(result, country))
+      .filter((job): job is JobPost => job !== null);
+  }
+
+  // Google can return the same posting under several URLs; the posting id is
   // the stable identity.
   const seen = new Set<string>();
   return jobs.filter((job) => (seen.has(job.id) ? false : (seen.add(job.id), true)));
@@ -363,6 +430,25 @@ function guessEmail(name: string, domain: string | null): string | null {
   return `${parts[0]}.${surname}@${domain}`;
 }
 
+/**
+ * Does a profile's own company segment agree with the company we searched for?
+ *
+ * Plain keyword queries are far looser than a `site:` search, so Google will
+ * happily return a recruiter at a different employer. Attaching them to this
+ * card would put the wrong name — and a guessed address at the wrong domain —
+ * in front of the user, so a stated mismatch disqualifies the result. A
+ * profile that names no company is kept, since there is nothing to contradict.
+ */
+function companyMatches(profileCompany: string | null, searched: string): boolean {
+  if (!profileCompany) return true;
+
+  const a = slugifyCompany(profileCompany);
+  const b = slugifyCompany(searched);
+  if (!a || !b) return true;
+
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 export function mapSerperContact(
   result: SerperOrganicResult,
   company: { companyName: string; domain: string | null },
@@ -372,6 +458,7 @@ export function mapSerperContact(
 
   const parsed = parseLinkedInProfileTitle(result.title ?? "");
   if (!parsed) return null;
+  if (!companyMatches(parsed.companyName, company.companyName)) return null;
 
   const email = guessEmail(parsed.name, company.domain);
 
