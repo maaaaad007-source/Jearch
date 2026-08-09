@@ -118,6 +118,11 @@ LinkedIn — because a single page of Google leaves only a handful of postings o
 merged and deduplicated, employers whose name could be read are listed first, and a thin result set
 triggers one more untargeted query. Four to five credits per search rather than one.
 
+Closed vacancies are dropped: Google indexes them for months after the fact, and the whole point of a
+card is the outreach. A posting on the employer's own domain also yields the company and its website
+directly from the host — `ericsson.com` is Ericsson — which beats resolving the domain with another
+search and cannot land on an ATS host.
+
 Quality gates run over everything that comes back, because a search engine returns portals as readily as
 postings. A role has to echo what was searched for (an aggregator titled "Jobs in Stockholm" is not a UX
 Designer role), and an employer name that is really a country, a city, a work arrangement or a sentence

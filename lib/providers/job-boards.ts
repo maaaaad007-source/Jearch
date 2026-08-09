@@ -13,6 +13,12 @@ export interface BoardMatch {
   board: string;
   /** Company slug taken from the URL, when the board puts one there. */
   companyFromUrl: string | null;
+  /**
+   * The employer's own domain, when the posting is on it. A job on
+   * `ericsson.com` tells us the company and its website at once — no
+   * resolution search, and no chance of guessing an address at the wrong host.
+   */
+  companyDomain?: string | null;
 }
 
 /** Pages that list many jobs rather than being one posting. */
@@ -217,10 +223,52 @@ export function matchJobBoard(link: string): BoardMatch | null {
   // shaped like a single posting and name the host as the source.
   if (!NEVER_A_POSTING.test(host) && GENERIC_POSTING.test(path)) {
     const label = host.replace(/^(jobs|careers|career|apply|work|join)\./i, "");
-    return { board: label, companyFromUrl: null };
+    const company = companyFromHost(host);
+
+    return {
+      board: label,
+      companyFromUrl: company,
+      // Only claim the domain when the host actually names the employer;
+      // an aggregator's domain is not the company's.
+      companyDomain: company ? host.replace(/^(jobs|careers|career|apply|work|join)\./i, "") : null,
+    };
   }
 
   return null;
+}
+
+/**
+ * Derive the employer from the host of a company's own careers page.
+ *
+ * `ericsson.com` is Ericsson; `spotifyjobs.com` is Spotify. An aggregator like
+ * `jobsinstockholm.com` is nobody — a host whose name is still about jobs after
+ * the recruiting words are stripped is a job site, not an employer, and
+ * claiming otherwise would put the wrong company on the card and build an
+ * address at its domain.
+ */
+export function companyFromHost(host: string): string | null {
+  const label = host.replace(/^(jobs|careers|career|apply|work|join|emea|www)\./i, "").split(".")[0];
+  if (!label) return null;
+
+  const trimmed = label.replace(/(jobs|careers|hiring|recruiting|recruitment|talent|vacancies)$/i, "");
+  if (!trimmed || trimmed.length < 2) return null;
+  if (/(job|career|vacan|recruit|talent|hiring|work|bemanning)/i.test(trimmed)) return null;
+
+  return prettifySlug(trimmed) || null;
+}
+
+/**
+ * Postings Google still indexes but nobody can apply to.
+ *
+ * Search results lag reality by months, and a closed vacancy wastes the one
+ * thing this app is for — the outreach. The wording is standard enough across
+ * boards to match directly.
+ */
+const EXPIRED_SIGNALS =
+  /\b(no longer accepting applications|no longer available|this (job|position|vacancy) (has expired|is closed|is no longer)|applications? (are )?closed|position (has been )?filled|vacancy (has )?closed|ansökningstiden har (gått ut|utgått)|sista ansökningsdag har passerat)\b/i;
+
+export function looksExpired(text: string): boolean {
+  return EXPIRED_SIGNALS.test(text);
 }
 
 /** Subdomains that name the page, not the employer. */

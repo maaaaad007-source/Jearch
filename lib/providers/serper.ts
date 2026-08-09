@@ -4,11 +4,12 @@ import { countryName, majorCities } from "@/lib/countries";
 import { ProviderError } from "@/lib/providers/errors";
 import { DECISION_MAKER_TITLES } from "@/lib/providers/constants";
 import {
+  isJobBoardHost,
   isPlausibleRole,
+  looksExpired,
   looksLikeListingPage,
   matchJobBoard,
   parseBoardTitle,
-  isJobBoardHost,
   sanitizeCompanyName,
 } from "@/lib/providers/job-boards";
 import { truncate } from "@/lib/text";
@@ -267,6 +268,10 @@ export function mapBoardResult(
   const rawTitle = result.title ?? "";
   if (!rawTitle || looksLikeListingPage(rawTitle)) return null;
 
+  // Google indexes closed vacancies for months. A card nobody can apply to is
+  // worse than one fewer card, since the whole point is the outreach.
+  if (looksExpired(`${rawTitle} ${result.snippet ?? ""}`)) return null;
+
   const parsed = parseBoardTitle(rawTitle, match.companyFromUrl, match.board);
   if (!parsed.title) return null;
 
@@ -289,9 +294,9 @@ export function mapBoardResult(
     id: `serper:${linkedInJobId(link) ?? cleanLink}`,
     title: parsed.title,
     companyName: companyName ?? "Unknown company",
-    // Search results expose no employer website; contact lookup falls back to
-    // searching by company name, which is what Serper enrichment wants anyway.
-    companyDomain: null,
+    // A posting on the employer's own site hands us the domain directly, which
+    // beats resolving it with another search and cannot land on an ATS host.
+    companyDomain: match.companyDomain ?? null,
     companyLogoUrl: null,
     city,
     country: country ?? fallbackCountry,
