@@ -1,0 +1,146 @@
+# Jearch — Direct-Contact Job Finder
+
+Search active job postings by **title** and **country**, and get the decision maker behind each one:
+recruiter or hiring lead, with LinkedIn profile, verified work email and direct phone where they exist.
+Draft the outreach email in one click, and bookmark what you want to follow up on.
+
+![Next.js](https://img.shields.io/badge/Next.js-16-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4)
+
+---
+
+## Quick start
+
+```bash
+npm install
+npm run dev          # http://localhost:3000
+```
+
+No API keys needed to try it. With no provider configured the app runs in **demo mode**: seeded,
+clearly-labelled synthetic postings and contacts on `.example` domains, so every screen and every
+interaction works before you pay for anything.
+
+To go live, copy `.env.example` to `.env.local` and fill in at least one job key and one contact key.
+
+---
+
+## Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| Framework | Next.js 16 (App Router, TypeScript, React 19) |
+| Styling | Tailwind CSS v4 + Shadcn-style UI primitives on Radix |
+| UI state | Zustand |
+| Persistence | Zustand `persist` → `localStorage`, optionally mirrored to Supabase |
+| Job search | JSearch (RapidAPI) or TheirStack |
+| Contact enrichment | Apollo.io or Hunter.io |
+
+---
+
+## How it works
+
+```text
+[Title + Country]
+       │
+       ▼
+GET /api/jobs ─────────► JSearch / TheirStack ──► normalized JobPost[]
+       │
+       ├─ extract company domains
+       ▼
+POST /api/contacts ────► Apollo / Hunter (decision-maker title filter)
+       │                 ranked by title relevance, then reachability
+       ▼
+UI merges JobPost + ContactPerson into one card
+```
+
+The two phases are deliberately separate requests. Job cards paint as soon as the board responds and
+the contact panels fill in when enrichment lands, instead of the page waiting on the slower of the two.
+
+Every provider adapter in `lib/providers/` maps its vendor payload into the shared types in
+`types/index.ts`, so swapping JSearch for TheirStack — or Apollo for Hunter — never touches a component.
+
+---
+
+## Configuration
+
+All environment variables are optional; see `.env.example` for the full list.
+
+| Variable | Purpose |
+| --- | --- |
+| `RAPIDAPI_KEY` | JSearch via RapidAPI |
+| `THEIRSTACK_API_KEY` | TheirStack job search |
+| `APOLLO_API_KEY` | Apollo.io people search |
+| `HUNTER_API_KEY` | Hunter.io domain search |
+| `JOB_PROVIDER` | Pin the job provider: `jsearch` \| `theirstack` \| `demo` |
+| `CONTACT_PROVIDER` | Pin the contact provider: `apollo` \| `hunter` \| `demo` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL (optional sync) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (optional sync) |
+
+Provider selection falls back gracefully: whichever key is present wins (JSearch and Apollo preferred),
+and with nothing set the app uses demo data and says so in the results header.
+
+### Saved opportunities
+
+Bookmarks always persist locally in the browser, so the Saved dashboard works with zero setup. Point
+the app at a Supabase project and they are mirrored server-side as well — run `supabase/schema.sql`
+first. There are no user accounts: each browser generates an anonymous owner id, and rows are scoped
+by it. Read the comments in the schema before using it with real data.
+
+---
+
+## Features
+
+**Search** — job title with autocomplete over a curated title corpus, country select with ISO 3166-1
+alpha-2 mapping, skeleton loading states.
+
+**Result cards** — two sections per card:
+
+- *Job banner*: title, company, location, work type (Remote/Hybrid/On-site), estimated salary,
+  freshness badge, and an expandable key-responsibilities summary extracted from the description.
+- *Contact panel*: decision maker name and title, LinkedIn badge, click-to-copy work email and direct
+  phone, a Verified / Guess / Unverified badge, plus any other decision makers at the same company.
+
+**Outreach** — a pre-filled draft naming the role and company, editable in place, handed to your mail
+client via `mailto:`, or copied whole to the clipboard.
+
+**Saved dashboard** — bookmarked jobs with their contact card, per-opportunity notes, and CSV export.
+
+---
+
+## Project layout
+
+```
+app/
+  api/jobs/         GET  designation + country → normalized postings
+  api/contacts/     POST company domains → ranked decision makers
+  api/saved/        Optional Supabase-backed bookmark sync
+  page.tsx          Search + results
+  saved/page.tsx    Saved opportunities dashboard
+components/         Cards, panels, dialogs, and ui/ primitives
+lib/
+  providers/        One adapter per vendor + demo data generator
+  countries.ts      ISO country list
+  email-template.ts Outreach draft builder
+  text.ts           HTML stripping and responsibility summarization
+store/              Zustand stores (search pipeline, saved bookmarks)
+types/              Shared domain types
+```
+
+---
+
+## Scripts
+
+```bash
+npm run dev         # dev server
+npm run build       # production build
+npm run start       # serve the production build
+npm run lint        # eslint
+npm run typecheck   # tsc --noEmit
+```
+
+---
+
+## A note on contact data
+
+Enrichment providers return best-effort data — that is what the verification badge is for. Check an
+address before you use it, and follow the rules that apply to unsolicited outreach in your market
+(GDPR in the EU, CAN-SPAM in the US, and equivalents elsewhere). Demo mode never emits a real address.

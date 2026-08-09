@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+/*
+ * Single token set, redefined for dark mode via prefers-color-scheme. Every
+ * component styles itself from these tokens rather than `dark:` variants, so
+ * the two themes can never drift apart.
+ */
+:root {
+  --background: oklch(0.99 0.004 260);
+  --foreground: oklch(0.21 0.02 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 264);
+  --muted: oklch(0.968 0.006 265);
+  --muted-foreground: oklch(0.52 0.017 265);
+  --primary: oklch(0.53 0.19 265);
+  --primary-foreground: oklch(0.985 0.002 260);
+  --secondary: oklch(0.968 0.006 265);
+  --secondary-foreground: oklch(0.29 0.02 264);
+  --accent: oklch(0.955 0.02 265);
+  --accent-foreground: oklch(0.32 0.06 265);
+  --destructive: oklch(0.58 0.21 27);
+  --destructive-foreground: oklch(0.985 0.002 260);
+  --success: oklch(0.6 0.14 155);
+  --success-foreground: oklch(0.99 0.01 155);
+  --warning: oklch(0.72 0.15 75);
+  --warning-foreground: oklch(0.26 0.05 75);
+  --border: oklch(0.92 0.006 265);
+  --input: oklch(0.92 0.006 265);
+  --ring: oklch(0.53 0.19 265);
+  --radius: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.17 0.014 265);
+    --foreground: oklch(0.96 0.003 260);
+    --card: oklch(0.21 0.016 265);
+    --card-foreground: oklch(0.96 0.003 260);
+    --muted: oklch(0.26 0.016 265);
+    --muted-foreground: oklch(0.72 0.014 265);
+    --primary: oklch(0.68 0.16 265);
+    --primary-foreground: oklch(0.18 0.03 265);
+    --secondary: oklch(0.27 0.016 265);
+    --secondary-foreground: oklch(0.95 0.004 260);
+    --accent: oklch(0.3 0.04 265);
+    --accent-foreground: oklch(0.93 0.02 265);
+    --destructive: oklch(0.65 0.19 27);
+    --destructive-foreground: oklch(0.16 0.03 27);
+    --success: oklch(0.7 0.14 155);
+    --success-foreground: oklch(0.17 0.03 155);
+    --warning: oklch(0.78 0.14 75);
+    --warning-foreground: oklch(0.22 0.04 75);
+    --border: oklch(0.31 0.016 265);
+    --input: oklch(0.33 0.016 265);
+    --ring: oklch(0.68 0.16 265);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-sm: calc(var(--radius) - 0.375rem);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklch, var(--primary) 25%, transparent);
+  }
+}
+
+@layer utilities {
+  /* Page-wide backdrop: a soft brand wash that stays subtle in both themes. */
+  .app-gradient {
+    background-image:
+      radial-gradient(60rem 32rem at 12% -8%, color-mix(in oklch, var(--primary) 14%, transparent), transparent),
+      radial-gradient(48rem 28rem at 92% 0%, color-mix(in oklch, var(--primary) 9%, transparent), transparent);
+  }
+
+  .shimmer {
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--foreground) 6%, transparent),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  .animate-in-up {
+    animation: in-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes in-up {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
