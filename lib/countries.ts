@@ -147,4 +147,79 @@ export function searchCountries(query: string): Country[] {
   return [...exactCode, ...startsWith, ...contains];
 }
 
+/**
+ * Where the jobs actually are.
+ *
+ * A country-level query ("UX Designer jobs Sweden") matches Google's
+ * country-level directory pages — "5000+ Design jobs in Sweden" — because that
+ * is what those pages are optimised for. City-level queries hit individual
+ * postings far more often, since a posting names its city and a national
+ * directory does not. Only the largest employment centres are listed; anything
+ * absent falls back to the country name.
+ */
+const MAJOR_CITIES: Record<string, string[]> = {
+  US: ["New York", "San Francisco", "Austin"],
+  GB: ["London", "Manchester", "Edinburgh"],
+  CA: ["Toronto", "Vancouver", "Montreal"],
+  AU: ["Sydney", "Melbourne", "Brisbane"],
+  DE: ["Berlin", "Munich", "Hamburg"],
+  FR: ["Paris", "Lyon", "Toulouse"],
+  NL: ["Amsterdam", "Rotterdam", "Utrecht"],
+  SE: ["Stockholm", "Gothenburg", "Malmö"],
+  NO: ["Oslo", "Bergen"],
+  DK: ["Copenhagen", "Aarhus"],
+  FI: ["Helsinki", "Tampere"],
+  IE: ["Dublin", "Cork"],
+  ES: ["Madrid", "Barcelona", "Valencia"],
+  IT: ["Milan", "Rome", "Turin"],
+  PT: ["Lisbon", "Porto"],
+  PL: ["Warsaw", "Kraków", "Wrocław"],
+  CZ: ["Prague", "Brno"],
+  AT: ["Vienna", "Graz"],
+  BE: ["Brussels", "Antwerp", "Ghent"],
+  CH: ["Zurich", "Geneva", "Basel"],
+  IN: ["Bengaluru", "Hyderabad", "Mumbai", "Pune"],
+  SG: ["Singapore"],
+  AE: ["Dubai", "Abu Dhabi"],
+  SA: ["Riyadh", "Jeddah"],
+  IL: ["Tel Aviv", "Herzliya"],
+  JP: ["Tokyo", "Osaka"],
+  KR: ["Seoul"],
+  CN: ["Shanghai", "Beijing", "Shenzhen"],
+  HK: ["Hong Kong"],
+  MY: ["Kuala Lumpur"],
+  ID: ["Jakarta"],
+  PH: ["Manila", "Cebu"],
+  VN: ["Ho Chi Minh City", "Hanoi"],
+  TH: ["Bangkok"],
+  NZ: ["Auckland", "Wellington"],
+  ZA: ["Cape Town", "Johannesburg"],
+  NG: ["Lagos", "Abuja"],
+  KE: ["Nairobi"],
+  EG: ["Cairo"],
+  BR: ["São Paulo", "Rio de Janeiro"],
+  MX: ["Mexico City", "Guadalajara"],
+  AR: ["Buenos Aires"],
+  CL: ["Santiago"],
+  CO: ["Bogotá", "Medellín"],
+  PK: ["Karachi", "Lahore"],
+  BD: ["Dhaka"],
+  TR: ["Istanbul", "Ankara"],
+  UA: ["Kyiv", "Lviv"],
+  RO: ["Bucharest", "Cluj-Napoca"],
+  HU: ["Budapest"],
+  GR: ["Athens"],
+  EE: ["Tallinn"],
+  LT: ["Vilnius"],
+  LV: ["Riga"],
+  BG: ["Sofia"],
+  RS: ["Belgrade"],
+  HR: ["Zagreb"],
+};
+
+/** Largest employment centres for a country, best first. */
+export function majorCities(code: string): string[] {
+  return MAJOR_CITIES[code.toUpperCase()] ?? [];
+}
+
 export const DEFAULT_COUNTRY = "US";

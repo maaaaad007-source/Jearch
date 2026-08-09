@@ -2,7 +2,14 @@ import { NextResponse } from "next/server";
 
 import { serverEnv } from "@/lib/env";
 import { countryName, isValidCountryCode } from "@/lib/countries";
-import { matchJobBoard, looksLikeListingPage, parseBoardTitle } from "@/lib/providers/job-boards";
+import {
+  isPlausibleRole,
+  looksLikeListingPage,
+  matchJobBoard,
+  parseBoardTitle,
+  sanitizeCompanyName,
+} from "@/lib/providers/job-boards";
+import { buildJobQueries } from "@/lib/providers/serper";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,11 +39,8 @@ export async function GET(request: Request) {
   }
 
   const country = countryName(countryCode);
-  const queries = [
-    [designation, "jobs", country, "linkedin hiring apply"].join(" "),
-    [designation, "jobs", country, "apply careers"].join(" "),
-    `site:linkedin.com/jobs/view "${designation}" ${country}`,
-  ];
+  // The same queries the real search runs, so a verdict here matches the app.
+  const queries = buildJobQueries({ designation, country: countryCode });
 
   const attempts = [];
 
@@ -71,14 +75,22 @@ export async function GET(request: Request) {
           return { title, link, verdict: `rejected: title reads as a listing page (${match.board})` };
         }
 
-        const parsed = parseBoardTitle(title, match.companyFromUrl);
+        const parsed = parseBoardTitle(title, match.companyFromUrl, match.board);
+        if (!isPlausibleRole(parsed.title, designation)) {
+          return {
+            title,
+            link,
+            verdict: `rejected: "${parsed.title}" does not read as a ${designation} role (${match.board})`,
+          };
+        }
+
         return {
           title,
           link,
           verdict: "KEPT",
           board: match.board,
           parsedRole: parsed.title,
-          parsedCompany: parsed.companyName,
+          parsedCompany: sanitizeCompanyName(parsed.companyName, country) ?? "(no employer in title)",
         };
       });
 

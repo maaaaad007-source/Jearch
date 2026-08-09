@@ -1,6 +1,6 @@
 import type { ContactPerson, JobPost, SearchParams, WorkType } from "@/types";
 import { slugifyCompany } from "@/lib/company";
-import { countryName } from "@/lib/countries";
+import { countryName, majorCities } from "@/lib/countries";
 import { ProviderError } from "@/lib/providers/errors";
 import { DECISION_MAKER_TITLES } from "@/lib/providers/constants";
 import {
@@ -305,6 +305,20 @@ export function mapBoardResult(
   };
 }
 
+/** The exact query set a search runs — shared with the debug endpoint. */
+export function buildJobQueries(params: SearchParams): string[] {
+  const subject = [params.designation, params.company].filter(Boolean);
+  const country = countryName(params.country);
+  const cities = majorCities(params.country);
+  const where = cities.length > 0 ? cities : [country];
+
+  return [
+    ...where.slice(0, 2).map((city) => [...subject, city, "hiring apply job"].join(" ")),
+    [...subject, where[0] ?? country, "teamtailor greenhouse lever workday job"].join(" "),
+    [...subject, where[0] ?? country, "linkedin hiring"].join(" "),
+  ];
+}
+
 export async function searchSerperJobs(
   params: SearchParams,
   apiKey: string,
@@ -320,21 +334,7 @@ export async function searchSerperJobs(
     country,
   ].join(" ");
 
-  /**
-   * One query returns one page of Google, which after filtering leaves only a
-   * handful of real postings. Several differently-angled queries — LinkedIn,
-   * the applicant-tracking systems, and a plain careers search — surface
-   * different employers, and merging them is what makes a result set worth
-   * scrolling. Each costs one credit, which is the trade being made.
-   */
-  const anglings = [
-    // "hiring" is the word in every LinkedIn job page title.
-    [...subject, "jobs", country, "linkedin hiring"].join(" "),
-    // The ATS platforms companies host their own listings on.
-    [...subject, country, "jobs greenhouse lever teamtailor workday apply"].join(" "),
-    // Plain careers search: company career pages and regional boards.
-    [...subject, "jobs", country, "apply careers vacancy"].join(" "),
-  ];
+  const anglings = buildJobQueries(params);
 
   const pages = await Promise.all(
     anglings.map((plain, index) =>

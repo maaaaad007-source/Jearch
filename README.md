@@ -107,10 +107,16 @@ those titles into postings — real LinkedIn listings, one credit per search, no
 The trade-off is what a search result contains: title, company, location, a snippet and the posting URL
 — but no salary and no employer website. The contact side compensates by looking companies up by name.
 
-**One search runs three queries**, angled differently — LinkedIn, the applicant-tracking systems, and a
-plain careers search — because a single page of Google leaves only a handful of postings once filtered.
-The results are merged and deduplicated, and employers whose name could be read are listed first. That
-costs three credits per search rather than one.
+**Queries name cities, not countries.** Asking Google for "UX Designer jobs Sweden" returns Sweden-wide
+directory pages — "5000+ Design jobs in Sweden" — because that is what those pages rank for. A city and
+an ATS platform are what individual postings rank for, so `lib/countries.ts` carries the major
+employment centres per country and the queries use them. Countries without a city list fall back to the
+country name.
+
+**One search runs four queries**, angled differently — two cities, the applicant-tracking systems, and
+LinkedIn — because a single page of Google leaves only a handful of postings once filtered. Results are
+merged and deduplicated, employers whose name could be read are listed first, and a thin result set
+triggers one more untargeted query. Four to five credits per search rather than one.
 
 Quality gates run over everything that comes back, because a search engine returns portals as readily as
 postings. A role has to echo what was searched for (an aggregator titled "Jobs in Stockholm" is not a UX
