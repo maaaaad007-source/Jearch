@@ -1,6 +1,7 @@
 import type { ContactPerson, JobPost, SearchParams } from "@/types";
 import {
   configWarnings,
+  deploymentInfo,
   resolveContactProvider,
   resolveJobProvider,
   serverEnv,
@@ -129,6 +130,34 @@ const PROVIDER_NAMES: Record<JobProvider, string> = {
 };
 
 /**
+ * A jobs database covers this country but is not switched on.
+ *
+ * Without this the shortfall is invisible: a search engine answers, the list is
+ * short, and nothing on screen says a fuller source exists but was skipped.
+ * Naming the deployment environment matters as much as naming the variables —
+ * it is what decides whether a credential added in a hosting dashboard reaches
+ * this particular build, and it is not otherwise visible from the app.
+ */
+function unconfiguredSourceHint(country: string): string | null {
+  const adzunaReady = Boolean(serverEnv.adzunaAppId && serverEnv.adzunaAppKey);
+  if (adzunaReady || !adzunaSupportsCountry(country)) return null;
+
+  const { environment, commit } = deploymentInfo();
+  const build = [environment && `environment “${environment}”`, commit && `commit ${commit}`]
+    .filter(Boolean)
+    .join(", ");
+
+  return [
+    `Adzuna covers ${country} and would return many more postings, but no Adzuna credentials reached this deployment,`,
+    `so this search used ${PROVIDER_NAMES[resolveJobProvider()]} alone.`,
+    `Set ADZUNA_APP_ID and ADZUNA_APP_KEY, enable them for this environment, and redeploy.`,
+    build && `(Answered by ${build}.)`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
  * Search the configured job sources in order, moving on when one comes back
  * empty or broken.
  *
@@ -168,10 +197,14 @@ export async function findJobs(params: SearchParams, signal?: AbortSignal): Prom
 
         const fallback = explained ? `${explained} — these results come from ${PROVIDER_NAMES[provider]}.` : null;
 
-        // A half-configured source is worth saying out loud here, not only in
-        // the diagnostic endpoint: it is the likeliest reason the results came
-        // from a weaker source than the user expected.
-        return { ...result, notice: [fallback, ...configWarnings()].filter(Boolean).join(" ") || null };
+        // A half-configured or entirely missing source is worth saying out loud
+        // here, not only in the diagnostic endpoint: it is the likeliest reason
+        // the results came from a weaker source than the user expected.
+        const notice = [fallback, unconfiguredSourceHint(params.country), ...configWarnings()]
+          .filter(Boolean)
+          .join(" ");
+
+        return { ...result, notice: notice || null };
       }
 
       firstEmpty ??= result;
@@ -192,7 +225,12 @@ export async function findJobs(params: SearchParams, signal?: AbortSignal): Prom
         ? `Searched ${searched} — no match in either.${failures.length > 0 ? ` (${failures.join(" · ")})` : ""}`
         : `Searched ${searched} — no match.`;
 
-    return { ...firstEmpty, notice: [summary, ...configWarnings()].filter(Boolean).join(" ") };
+    return {
+      ...firstEmpty,
+      notice: [summary, unconfiguredSourceHint(params.country), ...configWarnings()]
+        .filter(Boolean)
+        .join(" "),
+    };
   }
 
   // Nothing answered at all: every source threw.
