@@ -104,44 +104,55 @@ export async function searchAdzuna(
   const country = params.country.toLowerCase();
   const page = Math.max(1, params.page ?? 1);
 
-  const url = new URL(`${base()}/${country}/search/${page}`);
-  url.searchParams.set("app_id", appId);
-  url.searchParams.set("app_key", appKey);
-  url.searchParams.set("results_per_page", String(PAGE_SIZE));
-  url.searchParams.set("content-type", "application/json");
-  url.searchParams.set("max_days_old", "60");
+  const request = async (withCompanyFilter: boolean): Promise<JobPost[]> => {
+    const url = new URL(`${base()}/${country}/search/${page}`);
+    url.searchParams.set("app_id", appId);
+    url.searchParams.set("app_key", appKey);
+    url.searchParams.set("results_per_page", String(PAGE_SIZE));
+    url.searchParams.set("content-type", "application/json");
+    url.searchParams.set("max_days_old", "60");
 
-  if (params.designation) url.searchParams.set("what", params.designation);
-  // Adzuna has a real employer filter, so the company narrows the query itself
-  // rather than only being filtered out of the results afterwards.
-  if (params.company) url.searchParams.set("company", params.company);
+    if (params.designation) url.searchParams.set("what", params.designation);
+    if (withCompanyFilter && params.company) url.searchParams.set("company", params.company);
 
-  const response = await fetch(url, { signal, next: { revalidate: 300 } });
+    const response = await fetch(url, { signal, next: { revalidate: 300 } });
 
-  if (!response.ok) {
-    throw new ProviderError({
-      provider: "Adzuna",
-      kind: "jobs",
-      status: response.status,
-      body: await response.text().catch(() => ""),
-      envVar: "ADZUNA_APP_ID / ADZUNA_APP_KEY",
-      authHint: "that both the app id and the app key are copied from developer.adzuna.com",
-    });
-  }
+    if (!response.ok) {
+      throw new ProviderError({
+        provider: "Adzuna",
+        kind: "jobs",
+        status: response.status,
+        body: await response.text().catch(() => ""),
+        envVar: "ADZUNA_APP_ID / ADZUNA_APP_KEY",
+        authHint: "that both the app id and the app key are copied from developer.adzuna.com",
+      });
+    }
 
-  const payload = (await response.json()) as { results?: AdzunaResult[] };
-  if (!Array.isArray(payload.results)) {
-    const keys = payload && typeof payload === "object" ? Object.keys(payload).join(", ") : typeof payload;
-    throw new ProviderError({
-      provider: "Adzuna",
-      kind: "jobs",
-      status: response.status,
-      body: `No results array in the response (top-level keys: ${keys}).`,
-      envVar: "ADZUNA_APP_ID",
-    });
-  }
+    const payload = (await response.json()) as { results?: AdzunaResult[] };
+    if (!Array.isArray(payload.results)) {
+      const keys = payload && typeof payload === "object" ? Object.keys(payload).join(", ") : typeof payload;
+      throw new ProviderError({
+        provider: "Adzuna",
+        kind: "jobs",
+        status: response.status,
+        body: `No results array in the response (top-level keys: ${keys}).`,
+        envVar: "ADZUNA_APP_ID",
+      });
+    }
 
-  return payload.results
-    .map((result) => mapAdzunaResult(result, country))
-    .filter((job): job is JobPost => job !== null);
+    return payload.results
+      .map((result) => mapAdzunaResult(result, country))
+      .filter((job): job is JobPost => job !== null);
+  };
+
+  // Adzuna's company filter matches its own canonical employer name, so a name
+  // the user recognises ("Booking.com") can miss the catalogue's spelling and
+  // return nothing at all. Ask precisely first, then ask again without the
+  // filter and let the shared company matching sort the results out — a
+  // narrower query that finds nothing is worse than a broad one that is then
+  // filtered, and the caller filters either way.
+  const precise = await request(Boolean(params.company));
+  if (precise.length > 0 || !params.company) return precise;
+
+  return request(false);
 }
