@@ -24,6 +24,13 @@ export interface JobSource {
    * failure, and one the orchestrator has to know about to report honestly.
    */
   requiresCompany?: boolean;
+  /**
+   * True when the job title forms part of the source's query, so searching
+   * several roles at once means asking it once per role. An employer's board
+   * returns its whole list regardless, and asking it repeatedly would be the
+   * same request several times over.
+   */
+  queriedPerRole?: boolean;
   /** Whether this source covers the country at all. */
   supports(country: string): boolean;
   /** Whether its credentials are present. */

@@ -119,6 +119,7 @@ export const adzuna: JobSource = {
   // Three pages of fifty is 150 postings per search, which is the fix for
   // "it only shows one or two" — one page was never going to be enough.
   maxPages: 3,
+  queriedPerRole: true,
 
   supports(country) {
     return SUPPORTED.has(country.toLowerCase());

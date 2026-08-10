@@ -1,4 +1,4 @@
-import type { JobPost, SearchParams, SearchResponse, SourceReport } from "@/types";
+import type { JobPost, SearchParams, SearchQuery, SearchResponse, SourceReport } from "@/types";
 import { dedupe, employersFound, rankJobs } from "@/lib/ranking";
 import { setupReport } from "@/lib/config";
 import { adzuna } from "@/lib/sources/adzuna";
@@ -25,12 +25,12 @@ import { SourceError, type JobSource } from "@/lib/sources/types";
 const ALL_SOURCES: JobSource[] = [jobtech, adzuna, greenhouse, lever, ashby];
 
 /** Sources that can take part in this particular search. */
-function applicable(params: SearchParams): JobSource[] {
+function applicable(query: SearchQuery): JobSource[] {
   return ALL_SOURCES.filter((source) => {
-    if (!source.supports(params.country) || !source.ready()) return false;
+    if (!source.supports(query.country) || !source.ready()) return false;
 
     // An employer's own board cannot be searched across companies.
-    return !source.requiresCompany || Boolean(params.company?.trim());
+    return !source.requiresCompany || Boolean(query.company?.trim());
   });
 }
 
@@ -39,13 +39,23 @@ interface Collected {
   reports: SourceReport[];
 }
 
-async function collect(params: SearchParams, signal?: AbortSignal): Promise<Collected> {
+async function collect(query: SearchQuery, signal?: AbortSignal): Promise<Collected> {
   const perSource = await Promise.all(
-    applicable(params).map(async (source) => {
+    applicable(query).map(async (source) => {
       const pages = Array.from({ length: source.maxPages }, (_, index) => index + 1);
 
+      // Sources that put the job title in their query need asking once per
+      // role; an employer's board returns its whole list either way, so asking
+      // it repeatedly would just be the same request several times over.
+      const roles = source.queriedPerRole ? query.designations : query.designations.slice(0, 1);
+      const asked: SearchParams[] = (roles.length > 0 ? roles : [""]).map((designation) => ({
+        designation,
+        country: query.country,
+        company: query.company,
+      }));
+
       const settled = await Promise.allSettled(
-        pages.map((page) => source.fetchPage(params, page, signal)),
+        asked.flatMap((params) => pages.map((page) => source.fetchPage(params, page, signal))),
       );
 
       const jobs = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
@@ -87,25 +97,25 @@ function describeFailure(rejection: PromiseRejectedResult, source: JobSource): s
  * whole rewrite exists to remove: it looks identical to a market with no jobs
  * in it.
  */
-function blockedReason(params: SearchParams): string | null {
-  if (applicable(params).length > 0) return null;
+function blockedReason(query: SearchQuery): string | null {
+  if (applicable(query).length > 0) return null;
 
   // The employer boards are always ready, so reaching here with a company named
   // means the country has no database — worth saying, since the boards alone
   // would have answered had the country been covered.
   const covered = ALL_SOURCES.filter(
-    (source) => source.supports(params.country) && !source.requiresCompany,
+    (source) => source.supports(query.country) && !source.requiresCompany,
   );
 
   if (covered.length === 0) {
-    return `No job database here covers ${params.country} yet. Adzuna covers 19 countries and Platsbanken covers Sweden; try one of those, or name a company to search its own careers board.`;
+    return `No job database here covers ${query.country} yet. Adzuna covers 19 countries and Platsbanken covers Sweden; try one of those, or name a company to search its own careers board.`;
   }
 
   return setupReport().jobs.detail;
 }
 
-export async function search(params: SearchParams, signal?: AbortSignal): Promise<SearchResponse> {
-  const blocked = blockedReason(params);
+export async function search(query: SearchQuery, signal?: AbortSignal): Promise<SearchResponse> {
+  const blocked = blockedReason(query);
   if (blocked) {
     return {
       exact: [],
@@ -115,13 +125,14 @@ export async function search(params: SearchParams, signal?: AbortSignal): Promis
       excluded: { company: 0, stale: 0, title: 0 },
       sources: [],
       examined: 0,
+      roles: query.designations,
       blocked,
     };
   }
 
-  const { jobs, reports } = await collect(params, signal);
+  const { jobs, reports } = await collect(query, signal);
   const unique = dedupe(jobs);
-  const { exact, close, elsewhere, excluded } = rankJobs(unique, params);
+  const { exact, close, elsewhere, excluded } = rankJobs(unique, query);
 
   // Only worth listing employers when the company filter is what emptied the
   // results — otherwise it is noise about a search that worked.
@@ -135,6 +146,7 @@ export async function search(params: SearchParams, signal?: AbortSignal): Promis
     excluded,
     sources: reports,
     examined: unique.length,
+    roles: query.designations,
     blocked: null,
   };
 }

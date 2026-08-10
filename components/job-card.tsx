@@ -21,12 +21,18 @@ const WORK_TYPE_STYLE: Record<WorkType, string> = {
 
 interface JobCardProps {
   job: JobPost;
+  /**
+   * Which searched role this posting answered. Set only when several were
+   * searched at once, where a mixed list otherwise leaves "why is this here?"
+   * unanswered on every card.
+   */
+  matchedRole?: string | null;
   people: Person[] | undefined;
   /** True while the people lookup for this batch is still in flight. */
   loadingPeople: boolean;
 }
 
-export function JobCard({ job, people, loadingPeople }: JobCardProps) {
+export function JobCard({ job, matchedRole, people, loadingPeople }: JobCardProps) {
   const [expanded, setExpanded] = React.useState(false);
 
   const toggle = useSavedStore((s) => s.toggle);
@@ -63,6 +69,10 @@ export function JobCard({ job, people, loadingPeople }: JobCardProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          {matchedRole && (
+            <Badge className="border-transparent bg-primary/15 font-medium text-primary">{matchedRole}</Badge>
+          )}
+
           <Badge className={cn("font-medium", WORK_TYPE_STYLE[job.workType])}>{job.workType}</Badge>
 
           {location && (

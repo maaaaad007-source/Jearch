@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { isValidCountryCode } from "@/lib/countries";
+import { parseRoles } from "@/lib/ranking";
 import { search } from "@/lib/sources";
 
 export const runtime = "nodejs";
 
 const schema = z
   .object({
-    designation: z.string().trim().max(120),
+    // Room for several roles, e.g. "UX Designer, Product Designer".
+    designation: z.string().trim().max(240),
     company: z.string().trim().max(120),
     country: z
       .string()
@@ -35,7 +37,14 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await search(parsed.data, request.signal);
+    const result = await search(
+      {
+        designations: parseRoles(parsed.data.designation),
+        country: parsed.data.country,
+        company: parsed.data.company,
+      },
+      request.signal,
+    );
     return NextResponse.json(result);
   } catch (error) {
     // Reaching here means something outside a single source broke; per-source

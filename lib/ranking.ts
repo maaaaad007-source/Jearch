@@ -1,4 +1,4 @@
-import type { JobPost, MatchQuality, RankedJob, SearchParams } from "@/types";
+import type { JobPost, MatchQuality, RankedJob, SearchQuery } from "@/types";
 
 /**
  * Turning a pile of postings into an ordered answer.
@@ -14,6 +14,43 @@ import type { JobPost, MatchQuality, RankedJob, SearchParams } from "@/types";
 
 /** Beyond this a posting is usually filled, whatever the index still says. */
 const MAX_AGE_DAYS = 90;
+
+/**
+ * Roles per search.
+ *
+ * Every extra role multiplies the requests made, so the ceiling is about not
+ * turning one search into a rate-limit incident. Four covers the realistic
+ * case — a designer looking at UX, Product, Interaction and UI — and anything
+ * past it is dropped rather than silently truncating the results.
+ */
+export const MAX_ROLES = 4;
+
+/**
+ * Split what was typed into separate roles.
+ *
+ * Commas are the obvious separator, but people write "UX Designer / Product
+ * Designer" and "UX or Product Designer" just as readily, so all three are
+ * accepted. A single role with no separator is the ordinary case and comes
+ * back as a one-item list.
+ */
+export function parseRoles(input: string): string[] {
+  const roles = input
+    .split(/\s*[,;/]\s*|\s+\bor\b\s+/i)
+    .map((role) => role.trim())
+    .filter((role) => role.length >= 2);
+
+  // Case-insensitive de-duplication, keeping how the user wrote it.
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const role of roles) {
+    const key = role.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(role);
+  }
+
+  return unique.slice(0, MAX_ROLES);
+}
 
 /** Words employers use interchangeably in titles. */
 const SYNONYMS: Record<string, string[]> = {
@@ -182,8 +219,40 @@ const ELSEWHERE_LIMIT = 12;
  * outrank an exact match from last month, which is the mistake a single
  * blended score makes.
  */
-export function rankJobs(jobs: JobPost[], params: SearchParams, options: RankOptions = {}): RankedResults {
+/**
+ * Best score across every role searched, and which role earned it.
+ *
+ * A posting only has to answer one of the roles to belong in the results —
+ * that is the whole point of searching several at once — and the winning role
+ * is what the card should say it matched.
+ */
+function bestRole(job: JobPost, roles: string[]): { score: number; role: string | null } {
+  if (roles.length === 0) return { score: scoreTitle(job.title, ""), role: null };
+
+  let best = { score: -1, role: null as string | null };
+
+  for (const role of roles) {
+    let score = scoreTitle(job.title, role);
+
+    // Some employers title a posting "Designer II" and name the discipline
+    // only in the body. Worth showing, never worth calling an exact match.
+    if (score < EXACT_THRESHOLD && job.description) {
+      const needed = significant(role);
+      const body = job.description.toLowerCase();
+      if (needed.length > 0 && needed.every((word) => contains(body, word))) {
+        score = Math.max(score, 50);
+      }
+    }
+
+    if (score > best.score) best = { score, role };
+  }
+
+  return best;
+}
+
+export function rankJobs(jobs: JobPost[], query: SearchQuery, options: RankOptions = {}): RankedResults {
   const maxAge = options.maxAgeDays ?? MAX_AGE_DAYS;
+  const roles = query.designations.filter(Boolean);
   const exact: RankedJob[] = [];
   const close: RankedJob[] = [];
   const elsewhere: RankedJob[] = [];
@@ -196,19 +265,8 @@ export function rankJobs(jobs: JobPost[], params: SearchParams, options: RankOpt
       continue;
     }
 
-    const wrongCompany = Boolean(params.company && !matchesCompany(job, params.company));
-
-    let score = scoreTitle(job.title, params.designation);
-
-    // Some employers title a posting "Designer II" and name the discipline
-    // only in the body. Worth showing, never worth calling an exact match.
-    if (score < EXACT_THRESHOLD && params.designation && job.description) {
-      const needed = significant(params.designation);
-      const body = job.description.toLowerCase();
-      if (needed.length > 0 && needed.every((word) => contains(body, word))) {
-        score = Math.max(score, 50);
-      }
-    }
+    const wrongCompany = Boolean(query.company && !matchesCompany(job, query.company));
+    const { score, role } = bestRole(job, roles);
 
     if (score <= 0) {
       excluded.title += 1;
@@ -216,14 +274,15 @@ export function rankJobs(jobs: JobPost[], params: SearchParams, options: RankOpt
     }
 
     const quality: MatchQuality = score >= EXACT_THRESHOLD ? "exact" : "close";
+    const ranked: RankedJob = { job, quality, score, matchedRole: roles.length > 1 ? role : null };
 
     if (wrongCompany) {
       excluded.company += 1;
-      elsewhere.push({ job, quality, score });
+      elsewhere.push(ranked);
       continue;
     }
 
-    (quality === "exact" ? exact : close).push({ job, quality, score });
+    (quality === "exact" ? exact : close).push(ranked);
   }
 
   const order = (a: RankedJob, b: RankedJob) => {

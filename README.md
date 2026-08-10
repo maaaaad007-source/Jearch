@@ -76,10 +76,10 @@ did not reach the running build at all.
 ## How a search works
 
 ```
-     title + company + country
-                 │
+     roles + company + country          "UX Designer, Product Designer"
+                 │                       is one search, several queries
                  ▼
-   ┌─────────────────────────────┐   Adzuna       ·  3 pages ×  50
+   ┌─────────────────────────────┐   Adzuna       ·  3 pages ×  50 × roles
    │  every source that applies, │   Platsbanken  ·  2 pages × 100   (SE)
    │  all pages at once          │   Greenhouse ┐
    └─────────────────────────────┘   Lever      ├ the employer's own board,
@@ -122,6 +122,18 @@ so the page is useful before the slower half finishes.
 Sources are **additive, not competing** — two sources covering one market
 produce a better list together, and de-duplication makes the overlap harmless.
 A source that fails is named on screen rather than quietly skipped.
+
+### Searching several roles at once
+
+Comma-separate them — `UX Designer, Product Designer` — and `/` or ` or ` work
+too. Up to four roles per search; each one gets its own set of queries against
+the title-searching sources, all in parallel, and the combined pile is
+de-duplicated and ranked once. A posting only has to answer one of the roles,
+and each card is badged with the role it matched. An employer's own board is
+asked once regardless, since it returns its whole list either way.
+
+The cap exists because every extra role multiplies the requests made — four is
+a realistic ceiling, not an arbitrary one.
 
 ### What decides a match
 

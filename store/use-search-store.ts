@@ -34,6 +34,8 @@ interface SearchState {
   excluded: { company: number; stale: number; title: number };
   sources: SourceReport[];
   examined: number;
+  /** The roles the results actually answer, after parsing and capping. */
+  roles: string[];
   blocked: string | null;
   /** The query the visible results answer, so headings cannot drift. */
   searched: { designation: string; company: string; country: string } | null;
@@ -67,6 +69,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   excluded: { company: 0, stale: 0, title: 0 },
   sources: [],
   examined: 0,
+  roles: [],
   blocked: null,
   searched: null,
 
@@ -101,6 +104,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       excluded: { company: 0, stale: 0, title: 0 },
       sources: [],
       examined: 0,
+      roles: [],
       blocked: null,
       peopleByCompany: {},
       peopleStatus: "idle",
@@ -129,6 +133,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         excluded: payload.excluded ?? { company: 0, stale: 0, title: 0 },
         sources: payload.sources,
         examined: payload.examined,
+        roles: payload.roles ?? [],
         blocked: payload.blocked,
       });
 

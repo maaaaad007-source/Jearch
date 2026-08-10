@@ -19,6 +19,7 @@ export function ResultsGrid() {
   const elsewhere = useSearchStore((s) => s.elsewhere);
   const employersFound = useSearchStore((s) => s.employersFound);
   const excluded = useSearchStore((s) => s.excluded);
+  const roles = useSearchStore((s) => s.roles);
   const sources = useSearchStore((s) => s.sources);
   const examined = useSearchStore((s) => s.examined);
   const blocked = useSearchStore((s) => s.blocked);
@@ -63,12 +64,12 @@ export function ResultsGrid() {
   }
 
   const total = exact.length + close.length;
+  // Built from the roles the server actually searched, not the raw text, so a
+  // capped or de-duplicated list cannot claim more than it looked for.
+  const roleLabel =
+    roles.length > 0 ? roles.map((role) => `“${role}”`).join(" or ") : searched?.designation ? `“${searched.designation}”` : "";
   const label = searched
-    ? [
-        searched.designation && `“${searched.designation}”`,
-        searched.company && `at ${searched.company}`,
-        `in ${countryName(searched.country) ?? searched.country}`,
-      ]
+    ? [roleLabel, searched.company && `at ${searched.company}`, `in ${countryName(searched.country) ?? searched.country}`]
         .filter(Boolean)
         .join(" ")
     : "";
@@ -230,10 +231,11 @@ function Tier({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {jobs.map(({ job }) => (
+        {jobs.map(({ job, matchedRole }) => (
           <JobCard
             key={job.id}
             job={job}
+            matchedRole={matchedRole}
             people={peopleByCompany[job.companyName]}
             loadingPeople={loadingPeople && !peopleByCompany[job.companyName]}
           />

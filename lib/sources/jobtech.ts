@@ -106,6 +106,7 @@ export const jobtech: JobSource = {
   id: "jobtech",
   label: "Platsbanken",
   maxPages: 2,
+  queriedPerRole: true,
 
   supports(country) {
     return country.toUpperCase() === "SE";

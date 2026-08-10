@@ -58,6 +58,12 @@ export interface RankedJob {
   quality: MatchQuality;
   /** 0-100. Only used for ordering; never shown. */
   score: number;
+  /**
+   * Which of the searched roles this posting answered. Only meaningful when
+   * several were searched at once, where "why is this here?" is otherwise a
+   * fair question about every card.
+   */
+  matchedRole: string | null;
 }
 
 /**
@@ -79,10 +85,30 @@ export interface Person {
   source: string;
 }
 
+/**
+ * What one source is asked for: a single role.
+ *
+ * Kept deliberately singular. A source handed a list would have to decide how
+ * to combine the roles, and every source would decide differently — expanding
+ * them before they get here means one query shape and one set of rules.
+ */
 export interface SearchParams {
   /** Optional only when `company` is set — one of the two is always required. */
   designation: string;
   /** ISO 3166-1 alpha-2 country code. */
+  country: string;
+  company?: string;
+}
+
+/**
+ * What the user asked for, which may be several roles at once.
+ *
+ * "UX Designer, Product Designer" is one search to the person doing it and
+ * several queries underneath. This is the shape above that seam.
+ */
+export interface SearchQuery {
+  /** One or more roles. Empty only when a company is named. */
+  designations: string[];
   country: string;
   company?: string;
 }
@@ -109,6 +135,8 @@ export interface SearchResponse {
   sources: SourceReport[];
   /** Total postings examined before ranking — the honest denominator. */
   examined: number;
+  /** The roles actually searched, after parsing and capping. */
+  roles: string[];
   /** Set when the app cannot search at all, e.g. nothing is configured. */
   blocked: string | null;
 }

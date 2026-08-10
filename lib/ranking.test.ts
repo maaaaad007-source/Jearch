@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { companyTokens, dedupe, matchesCompany, rankJobs, sameCompany, scoreTitle } from "./ranking.ts";
+import { companyTokens, dedupe, matchesCompany, parseRoles, rankJobs, sameCompany, scoreTitle } from "./ranking.ts";
 import type { JobPost } from "../types/index.ts";
 
 /**
@@ -69,7 +69,7 @@ test("a company search that finds nothing still reports the role elsewhere", () 
   ];
 
   const { exact, close, elsewhere, excluded } = rankJobs(jobs, {
-    designation: "UX Designer",
+    designations: ["UX Designer"],
     country: "NL",
     company: "Booking.com",
   });
@@ -84,7 +84,7 @@ test("excluded postings are counted by reason", () => {
   const old = new Date(Date.now() - 200 * 864e5).toISOString();
   const { excluded } = rankJobs(
     [job({ id: "a", postedAt: old }), job({ id: "b", title: "Chef de Partie" })],
-    { designation: "UX Designer", country: "NL" },
+    { designations: ["UX Designer"], country: "NL" },
   );
 
   assert.equal(excluded.stale, 1);
@@ -93,7 +93,7 @@ test("excluded postings are counted by reason", () => {
 
 test("close matches are kept rather than discarded", () => {
   const jobs = [job({ id: "a" }), job({ id: "b", title: "Product Designer" })];
-  const { exact, close } = rankJobs(jobs, { designation: "UX Designer", country: "NL" });
+  const { exact, close } = rankJobs(jobs, { designations: ["UX Designer"], country: "NL" });
 
   assert.equal(exact.length, 1);
   assert.equal(close.length, 1, "a related role should still be shown, under its own heading");
@@ -101,7 +101,7 @@ test("close matches are kept rather than discarded", () => {
 
 test("stale postings are dropped", () => {
   const old = new Date(Date.now() - 200 * 864e5).toISOString();
-  const { exact, close } = rankJobs([job({ postedAt: old })], { designation: "UX Designer", country: "NL" });
+  const { exact, close } = rankJobs([job({ postedAt: old })], { designations: ["UX Designer"], country: "NL" });
 
   assert.equal(exact.length + close.length, 0);
 });
@@ -130,4 +130,38 @@ test("the employer's own listing beats an aggregator's copy", () => {
 
   assert.equal(unique.length, 1);
   assert.equal(unique[0].source, "Greenhouse", "the primary record wins even when its text is shorter");
+});
+
+test("several roles can be searched at once", () => {
+  assert.deepEqual(parseRoles("UX Designer, Product Designer"), ["UX Designer", "Product Designer"]);
+  assert.deepEqual(parseRoles("UX Designer / Product Designer"), ["UX Designer", "Product Designer"]);
+  assert.deepEqual(parseRoles("UX Designer or Product Designer"), ["UX Designer", "Product Designer"]);
+  assert.deepEqual(parseRoles("UX Designer"), ["UX Designer"]);
+  // The same role twice is one role, however it was capitalised.
+  assert.deepEqual(parseRoles("UX Designer, ux designer"), ["UX Designer"]);
+});
+
+test("a posting matching any searched role is kept, and says which", () => {
+  const jobs = [
+    job({ id: "a", title: "UX Designer" }),
+    job({ id: "b", title: "Product Designer" }),
+    job({ id: "c", title: "Chef de Partie" }),
+  ];
+
+  const { exact } = rankJobs(jobs, {
+    designations: ["UX Designer", "Product Designer"],
+    country: "NL",
+  });
+
+  assert.equal(exact.length, 2);
+  assert.deepEqual(
+    exact.map((entry) => entry.matchedRole).sort(),
+    ["Product Designer", "UX Designer"],
+  );
+});
+
+test("a single role search leaves the role badge off", () => {
+  const { exact } = rankJobs([job()], { designations: ["UX Designer"], country: "NL" });
+
+  assert.equal(exact[0].matchedRole, null, "labelling every card with the only role searched is noise");
 });

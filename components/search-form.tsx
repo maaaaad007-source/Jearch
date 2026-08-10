@@ -11,6 +11,14 @@ import { suggestTitles } from "@/lib/job-titles";
 import { cn } from "@/lib/utils";
 import { useSearchStore } from "@/store/use-search-store";
 
+/** "UX Designer, Prod" → head "UX Designer," and tail "Prod". */
+function splitTrailingRole(value: string): { head: string; tail: string } {
+  const separator = value.lastIndexOf(",");
+  if (separator === -1) return { head: "", tail: value };
+
+  return { head: value.slice(0, separator + 1), tail: value.slice(separator + 1).trim() };
+}
+
 export function SearchForm() {
   const designation = useSearchStore((s) => s.designation);
   const company = useSearchStore((s) => s.company);
@@ -26,7 +34,12 @@ export function SearchForm() {
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   const busy = status === "searching";
-  const suggestions = React.useMemo(() => suggestTitles(designation), [designation]);
+
+  // With several roles in the box, the suggestion list belongs to the one
+  // being typed — completing the whole string would replace roles already
+  // entered.
+  const { head, tail } = React.useMemo(() => splitTrailingRole(designation), [designation]);
+  const suggestions = React.useMemo(() => suggestTitles(tail), [tail]);
 
   React.useEffect(() => {
     function onPointerDown(event: MouseEvent) {
@@ -37,7 +50,7 @@ export function SearchForm() {
   }, []);
 
   function commit(value: string) {
-    setDesignation(value);
+    setDesignation(head ? `${head} ${value}` : value);
     setOpen(false);
     setHighlighted(0);
   }
@@ -71,11 +84,13 @@ export function SearchForm() {
       className="grid gap-4 rounded-lg border border-border bg-card/70 p-4 shadow-sm backdrop-blur sm:p-5 md:grid-cols-2 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_15rem_auto] lg:items-end"
     >
       <div ref={containerRef} className="relative grid grid-cols-1 gap-2">
-        <Label htmlFor="designation">Job title / designation</Label>
+        <Label htmlFor="designation">
+          Job title <span className="font-normal text-muted-foreground">(comma-separate for several)</span>
+        </Label>
         <Input
           id="designation"
           value={designation}
-          placeholder="e.g. Full Stack Engineer"
+          placeholder="e.g. UX Designer, Product Designer"
           autoComplete="off"
           role="combobox"
           aria-expanded={open}
