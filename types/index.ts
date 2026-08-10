@@ -99,6 +99,12 @@ export interface SourceReport {
 export interface SearchResponse {
   exact: RankedJob[];
   close: RankedJob[];
+  /** Title matches at other employers, when a company filter found nothing. */
+  elsewhere: RankedJob[];
+  /** Employers the search did turn up — names the company filter rejected. */
+  employersFound: string[];
+  /** Why postings were set aside, so an empty result can explain itself. */
+  excluded: { company: number; stale: number; title: number };
   /** Every source consulted, whether or not it produced anything. */
   sources: SourceReport[];
   /** Total postings examined before ranking — the honest denominator. */

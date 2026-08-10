@@ -1,5 +1,5 @@
 import type { JobPost, SearchParams, SearchResponse, SourceReport } from "@/types";
-import { dedupe, rankJobs } from "@/lib/ranking";
+import { dedupe, employersFound, rankJobs } from "@/lib/ranking";
 import { setupReport } from "@/lib/config";
 import { adzuna } from "@/lib/sources/adzuna";
 import { jobtech } from "@/lib/sources/jobtech";
@@ -107,14 +107,36 @@ function blockedReason(params: SearchParams): string | null {
 export async function search(params: SearchParams, signal?: AbortSignal): Promise<SearchResponse> {
   const blocked = blockedReason(params);
   if (blocked) {
-    return { exact: [], close: [], sources: [], examined: 0, blocked };
+    return {
+      exact: [],
+      close: [],
+      elsewhere: [],
+      employersFound: [],
+      excluded: { company: 0, stale: 0, title: 0 },
+      sources: [],
+      examined: 0,
+      blocked,
+    };
   }
 
   const { jobs, reports } = await collect(params, signal);
   const unique = dedupe(jobs);
-  const { exact, close } = rankJobs(unique, params);
+  const { exact, close, elsewhere, excluded } = rankJobs(unique, params);
 
-  return { exact, close, sources: reports, examined: unique.length, blocked: null };
+  // Only worth listing employers when the company filter is what emptied the
+  // results — otherwise it is noise about a search that worked.
+  const foundNothingAtCompany = exact.length === 0 && close.length === 0;
+
+  return {
+    exact,
+    close,
+    elsewhere: foundNothingAtCompany ? elsewhere : [],
+    employersFound: foundNothingAtCompany ? employersFound(elsewhere) : [],
+    excluded,
+    sources: reports,
+    examined: unique.length,
+    blocked: null,
+  };
 }
 
 /** Which sources a country would use — for the setup page, not the search. */

@@ -29,6 +29,9 @@ interface SearchState {
 
   exact: RankedJob[];
   close: RankedJob[];
+  elsewhere: RankedJob[];
+  employersFound: string[];
+  excluded: { company: number; stale: number; title: number };
   sources: SourceReport[];
   examined: number;
   blocked: string | null;
@@ -59,6 +62,9 @@ export const useSearchStore = create<SearchState>((set, get) => ({
 
   exact: [],
   close: [],
+  elsewhere: [],
+  employersFound: [],
+  excluded: { company: 0, stale: 0, title: 0 },
   sources: [],
   examined: 0,
   blocked: null,
@@ -90,6 +96,9 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       error: null,
       exact: [],
       close: [],
+      elsewhere: [],
+      employersFound: [],
+      excluded: { company: 0, stale: 0, title: 0 },
       sources: [],
       examined: 0,
       blocked: null,
@@ -115,6 +124,9 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         status: "ready",
         exact: payload.exact,
         close: payload.close,
+        elsewhere: payload.elsewhere ?? [],
+        employersFound: payload.employersFound ?? [],
+        excluded: payload.excluded ?? { company: 0, stale: 0, title: 0 },
         sources: payload.sources,
         examined: payload.examined,
         blocked: payload.blocked,
@@ -131,14 +143,17 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   },
 
   lookUpPeople: async (controller) => {
-    const { exact, close } = get();
+    const { exact, close, elsewhere } = get();
 
     // Exact matches first — if the budget runs out, it should run out on the
-    // results the user is least likely to act on.
+    // results the user is least likely to act on. Other-employer results are
+    // last but still included: they are the only cards on screen when a
+    // company search comes up empty, and a card without a contact is half a
+    // card.
     const companies: Array<{ companyName: string; domain: string | null }> = [];
     const seen = new Set<string>();
 
-    for (const { job } of [...exact, ...close]) {
+    for (const { job } of [...exact, ...close, ...elsewhere]) {
       if (companies.length >= PEOPLE_BUDGET) break;
       if (job.companyName === "Unknown company" || seen.has(job.companyName)) continue;
 

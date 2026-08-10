@@ -56,6 +56,41 @@ test("synonyms and seniority do not break an exact match", () => {
   assert.ok(scoreTitle("Senior UX Designer", "UX Designer") >= 70);
 });
 
+test("a company name written with different spacing still matches", () => {
+  // Adzuna and the user rarely agree on where the spaces go.
+  assert.ok(sameCompany("Booking com", "Booking.com"));
+  assert.ok(sameCompany("BookingCom", "Booking.com"));
+});
+
+test("a company search that finds nothing still reports the role elsewhere", () => {
+  const jobs = [
+    job({ id: "a", companyName: "Adyen" }),
+    job({ id: "b", companyName: "ING", title: "UX Designer" }),
+  ];
+
+  const { exact, close, elsewhere, excluded } = rankJobs(jobs, {
+    designation: "UX Designer",
+    country: "NL",
+    company: "Booking.com",
+  });
+
+  assert.equal(exact.length, 0);
+  assert.equal(close.length, 0);
+  assert.equal(elsewhere.length, 2, "the role was found, just not at that employer");
+  assert.equal(excluded.company, 2);
+});
+
+test("excluded postings are counted by reason", () => {
+  const old = new Date(Date.now() - 200 * 864e5).toISOString();
+  const { excluded } = rankJobs(
+    [job({ id: "a", postedAt: old }), job({ id: "b", title: "Chef de Partie" })],
+    { designation: "UX Designer", country: "NL" },
+  );
+
+  assert.equal(excluded.stale, 1);
+  assert.equal(excluded.title, 1);
+});
+
 test("close matches are kept rather than discarded", () => {
   const jobs = [job({ id: "a" }), job({ id: "b", title: "Product Designer" })];
   const { exact, close } = rankJobs(jobs, { designation: "UX Designer", country: "NL" });

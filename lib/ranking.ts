@@ -92,6 +92,12 @@ export function sameCompany(a: string, b: string): boolean {
   const right = companyTokens(b);
   if (left.length === 0 || right.length === 0) return false;
 
+  // Catalogues disagree about where the spaces go: "Booking.com" reduces to
+  // one token, "Booking com" to two. Comparing the closed-up forms for
+  // *equality* settles that. Deliberately not a prefix test — "metabase"
+  // starts with "meta" and they are different companies.
+  if (left.join("") === right.join("")) return true;
+
   const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
   return shorter.every((token, index) => token === longer[index]);
 }
@@ -151,6 +157,24 @@ export interface RankOptions {
   maxAgeDays?: number;
 }
 
+export interface RankedResults {
+  exact: RankedJob[];
+  close: RankedJob[];
+  /**
+   * Title matches at a *different* employer, kept only when a company was
+   * named. A company search that finds nothing has still done the work of
+   * finding the role elsewhere, and throwing that away leaves the user with a
+   * blank screen and no idea whether the role or the employer was the problem.
+   */
+  elsewhere: RankedJob[];
+  /** Why postings were set aside — the difference between "no such job" and
+   * "wrong company name", which is invisible from a count of zero. */
+  excluded: { company: number; stale: number; title: number };
+}
+
+/** Enough to prove the role exists elsewhere, without burying the answer. */
+const ELSEWHERE_LIMIT = 12;
+
 /**
  * Score, split and order every posting collected for a search.
  *
@@ -158,20 +182,21 @@ export interface RankOptions {
  * outrank an exact match from last month, which is the mistake a single
  * blended score makes.
  */
-export function rankJobs(
-  jobs: JobPost[],
-  params: SearchParams,
-  options: RankOptions = {},
-): { exact: RankedJob[]; close: RankedJob[] } {
+export function rankJobs(jobs: JobPost[], params: SearchParams, options: RankOptions = {}): RankedResults {
   const maxAge = options.maxAgeDays ?? MAX_AGE_DAYS;
   const exact: RankedJob[] = [];
   const close: RankedJob[] = [];
+  const elsewhere: RankedJob[] = [];
+  const excluded = { company: 0, stale: 0, title: 0 };
 
   for (const job of jobs) {
     const age = ageInDays(job.postedAt);
-    if (age !== null && age > maxAge) continue;
+    if (age !== null && age > maxAge) {
+      excluded.stale += 1;
+      continue;
+    }
 
-    if (params.company && !matchesCompany(job, params.company)) continue;
+    const wrongCompany = Boolean(params.company && !matchesCompany(job, params.company));
 
     let score = scoreTitle(job.title, params.designation);
 
@@ -185,9 +210,19 @@ export function rankJobs(
       }
     }
 
-    if (score <= 0) continue;
+    if (score <= 0) {
+      excluded.title += 1;
+      continue;
+    }
 
     const quality: MatchQuality = score >= EXACT_THRESHOLD ? "exact" : "close";
+
+    if (wrongCompany) {
+      excluded.company += 1;
+      elsewhere.push({ job, quality, score });
+      continue;
+    }
+
     (quality === "exact" ? exact : close).push({ job, quality, score });
   }
 
@@ -199,7 +234,35 @@ export function rankJobs(
     return ageA - ageB;
   };
 
-  return { exact: exact.sort(order), close: close.sort(order) };
+  return {
+    exact: exact.sort(order),
+    close: close.sort(order),
+    elsewhere: elsewhere.sort(order).slice(0, ELSEWHERE_LIMIT),
+    excluded,
+  };
+}
+
+/**
+ * The employers a search actually turned up, most postings first.
+ *
+ * Shown when a company filter matched nothing: seeing that the catalogue lists
+ * "Booking.com BV" while you typed something it could not reconcile is the
+ * fastest way to understand an empty result, and no error message can guess it
+ * for you.
+ */
+export function employersFound(jobs: RankedJob[], limit = 8): string[] {
+  const counts = new Map<string, number>();
+
+  for (const { job } of jobs) {
+    const name = job.companyName;
+    if (!name || name === "Unknown company") continue;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name]) => name);
 }
 
 /**

@@ -16,6 +16,9 @@ export function ResultsGrid() {
   const error = useSearchStore((s) => s.error);
   const exact = useSearchStore((s) => s.exact);
   const close = useSearchStore((s) => s.close);
+  const elsewhere = useSearchStore((s) => s.elsewhere);
+  const employersFound = useSearchStore((s) => s.employersFound);
+  const excluded = useSearchStore((s) => s.excluded);
   const sources = useSearchStore((s) => s.sources);
   const examined = useSearchStore((s) => s.examined);
   const blocked = useSearchStore((s) => s.blocked);
@@ -109,9 +112,13 @@ export function ResultsGrid() {
 
       {total === 0 && (
         <Notice tone="info" icon={<SearchX className="size-4" />}>
-          Nothing matched {label}. {examined > 0
-            ? `${examined} postings were examined but none were close enough to the title.`
-            : "The databases returned no postings at all for this country — try a broader job title."}
+          <EmptyExplanation
+            label={label}
+            examined={examined}
+            excluded={excluded}
+            company={searched?.company ?? ""}
+            employers={employersFound}
+          />
         </Notice>
       )}
 
@@ -133,7 +140,70 @@ export function ResultsGrid() {
           loadingPeople={loadingPeople}
         />
       )}
+
+      {elsewhere.length > 0 && (
+        <Tier
+          title={`Same role at other employers`}
+          description={`Nothing came up at ${searched?.company ?? "that company"}, so here is the role elsewhere in the same country.`}
+          jobs={elsewhere}
+          peopleByCompany={peopleByCompany}
+          loadingPeople={loadingPeople}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Why a search came back empty.
+ *
+ * "0 results" out of 88 postings is the least useful thing the app can say —
+ * it hides whether the role does not exist, the employer is spelled
+ * differently, or everything was stale. Each of those has a different fix, so
+ * each gets named.
+ */
+function EmptyExplanation({
+  label,
+  examined,
+  excluded,
+  company,
+  employers,
+}: {
+  label: string;
+  examined: number;
+  excluded: { company: number; stale: number; title: number };
+  company: string;
+  employers: string[];
+}) {
+  if (examined === 0) {
+    return <span>No postings came back at all for {label}. Try a broader job title.</span>;
+  }
+
+  if (company && excluded.company > 0) {
+    return (
+      <span>
+        No postings at <strong>{company}</strong>, but {excluded.company} of the {examined} postings
+        considered were the right role at other employers — they are listed below.
+        {employers.length > 0 && (
+          <>
+            {" "}
+            The employers found were: {employers.join(", ")}. If one of those is the company you meant,
+            search it by the name shown here.
+          </>
+        )}
+      </span>
+    );
+  }
+
+  const reasons = [
+    excluded.title > 0 && `${excluded.title} were a different role`,
+    excluded.stale > 0 && `${excluded.stale} were older than 90 days`,
+  ].filter(Boolean);
+
+  return (
+    <span>
+      Nothing matched {label}. Of {examined} postings considered, {reasons.join(" and ")}.
+    </span>
   );
 }
 
