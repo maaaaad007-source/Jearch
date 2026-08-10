@@ -52,6 +52,36 @@ export function providerEnvNamesSeen(): string[] {
     .sort();
 }
 
+export interface DeploymentInfo {
+  /** "production" | "preview" | "development" on Vercel, else null. */
+  environment: string | null;
+  /** Branch this build came from. */
+  branch: string | null;
+  /** Short commit sha, so a stale deployment is obvious. */
+  commit: string | null;
+  host: string | null;
+}
+
+/**
+ * Which deployment is answering.
+ *
+ * Environment variables are scoped per environment, and a branch that is not
+ * the production branch builds as a Preview — so a variable ticked for
+ * Production only is genuinely absent here, which is indistinguishable from a
+ * typo without knowing which environment this is. All four values are
+ * non-secret build metadata.
+ */
+export function deploymentInfo(): DeploymentInfo {
+  const short = (sha?: string) => (sha ? sha.slice(0, 7) : null);
+
+  return {
+    environment: read("VERCEL_ENV") ?? (process.env.NODE_ENV === "production" ? null : "local"),
+    branch: read("VERCEL_GIT_COMMIT_REF") ?? null,
+    commit: short(read("VERCEL_GIT_COMMIT_SHA")),
+    host: read("VERCEL_URL") ?? null,
+  };
+}
+
 export const serverEnv = {
   get jsearchKey() {
     return read("RAPIDAPI_KEY") ?? read("JSEARCH_API_KEY");
