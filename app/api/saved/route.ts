@@ -20,9 +20,8 @@ const jobSchema = z.object({
   title: z.string(),
   companyName: z.string(),
   companyDomain: z.string().nullable(),
-  companyLogoUrl: z.string().nullable(),
   city: z.string().nullable(),
-  country: z.string().nullable(),
+  region: z.string().nullable(),
   workType: z.enum(["Remote", "Hybrid", "On-site", "Unknown"]),
   salary: z
     .object({
@@ -39,19 +38,15 @@ const jobSchema = z.object({
   source: z.string(),
 });
 
-const contactSchema = z
+const personSchema = z
   .object({
     id: z.string(),
     name: z.string(),
     title: z.string().nullable(),
     linkedinUrl: z.string().nullable(),
     email: z.string().nullable(),
-    emailStatus: z.enum(["verified", "guess", "unverified"]),
-    phone: z.string().nullable(),
-    phoneExtension: z.string().nullable(),
+    emailIsPattern: z.boolean(),
     companyName: z.string().nullable(),
-    companyDomain: z.string().nullable(),
-    confidence: z.number().nullable(),
     source: z.string(),
   })
   .nullable();
@@ -61,7 +56,7 @@ const saveSchema = z.object({
   opportunity: z.object({
     id: z.string(),
     job: jobSchema,
-    contact: contactSchema,
+    person: personSchema,
     savedAt: z.string(),
     notes: z.string().nullable(),
   }),
@@ -80,7 +75,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from(SAVED_JOBS_TABLE)
-    .select("id, job, contact, saved_at, notes")
+    .select("id, job, person, saved_at, notes")
     .eq("owner_id", ownerId)
     .order("saved_at", { ascending: false });
 
@@ -92,7 +87,7 @@ export async function GET(request: Request) {
   const opportunities: SavedOpportunity[] = (data ?? []).map((row) => ({
     id: row.id as string,
     job: row.job as SavedOpportunity["job"],
-    contact: row.contact as SavedOpportunity["contact"],
+    person: row.person as SavedOpportunity["person"],
     savedAt: row.saved_at as string,
     notes: (row.notes as string | null) ?? null,
   }));
@@ -119,7 +114,7 @@ export async function POST(request: Request) {
       id: opportunity.id,
       owner_id: ownerId,
       job: opportunity.job,
-      contact: opportunity.contact,
+      person: opportunity.person,
       saved_at: opportunity.savedAt,
       notes: opportunity.notes,
     },

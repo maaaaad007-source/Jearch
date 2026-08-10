@@ -18,26 +18,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { buildMailDraft, mailtoUrl } from "@/lib/email-template";
-import type { ContactPerson, JobPost } from "@/types";
+import type { JobPost, Person } from "@/types";
 
 interface MailDraftDialogProps {
   job: JobPost;
-  contact: ContactPerson | null;
+  person: Person | null;
   trigger?: React.ReactNode;
 }
 
 /**
- * 1-click draft: opens with the template pre-filled from the job and contact,
+ * 1-click draft: opens with the template pre-filled from the job and person,
  * stays editable, and hands off to the user's mail client via `mailto:`.
  */
-export function MailDraftDialog({ job, contact, trigger }: MailDraftDialogProps) {
+export function MailDraftDialog({ job, person, trigger }: MailDraftDialogProps) {
   const [open, setOpen] = React.useState(false);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger ?? (
-          <Button size="sm" variant="default" disabled={!contact?.email}>
+          <Button size="sm" variant="default" disabled={!person?.email}>
             <Mail />
             Send Email
           </Button>
@@ -47,7 +47,7 @@ export function MailDraftDialog({ job, contact, trigger }: MailDraftDialogProps)
       <DialogContent className="max-w-xl">
         {/* Mounted only while open, so each visit starts from a fresh draft
             rather than whatever was typed last time. */}
-        <DraftForm job={job} contact={contact} onSent={() => setOpen(false)} />
+        <DraftForm job={job} person={person} onSent={() => setOpen(false)} />
       </DialogContent>
     </Dialog>
   );
@@ -55,14 +55,14 @@ export function MailDraftDialog({ job, contact, trigger }: MailDraftDialogProps)
 
 function DraftForm({
   job,
-  contact,
+  person,
   onSent,
 }: {
   job: JobPost;
-  contact: ContactPerson | null;
+  person: Person | null;
   onSent: () => void;
 }) {
-  const initial = React.useMemo(() => buildMailDraft(job, contact), [job, contact]);
+  const initial = React.useMemo(() => buildMailDraft(job, person), [job, person]);
 
   const [to, setTo] = React.useState(initial.to);
   const [subject, setSubject] = React.useState(initial.subject);

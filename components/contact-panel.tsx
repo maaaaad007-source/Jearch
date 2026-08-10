@@ -1,198 +1,153 @@
 "use client";
 
 import * as React from "react";
-import { BadgeCheck, ChevronDown, CircleHelp, Mail, Phone, UserSearch } from "lucide-react";
+import { AlertCircle, ChevronDown, Loader2, Mail, UserSearch } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { LinkedInIcon } from "@/components/icons/linkedin";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/copy-button";
+import { LinkedInIcon } from "@/components/icons/linkedin";
 import { MailDraftDialog } from "@/components/mail-draft-dialog";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn, initials } from "@/lib/utils";
-import type { ContactPerson, JobPost, VerificationStatus } from "@/types";
+import { cn } from "@/lib/utils";
+import type { JobPost, Person } from "@/types";
 
-const VERIFICATION_LABEL: Record<VerificationStatus, string> = {
-  verified: "Verified",
-  guess: "Guess / Unverified",
-  unverified: "Unverified",
-};
-
-function VerificationBadge({ status, confidence }: { status: VerificationStatus; confidence: number | null }) {
-  const variant = status === "verified" ? "success" : status === "guess" ? "warning" : "muted";
-  const Icon = status === "verified" ? BadgeCheck : CircleHelp;
-
-  return (
-    <Badge variant={variant} title={confidence != null ? `Provider confidence: ${confidence}%` : undefined}>
-      <Icon />
-      {VERIFICATION_LABEL[status]}
-      {confidence != null && status !== "unverified" ? ` · ${confidence}%` : ""}
-    </Badge>
-  );
-}
+/**
+ * Who to contact, ordered by what we can actually stand behind.
+ *
+ * The LinkedIn profile leads because it was genuinely found — you can open it
+ * and see a real person. The email follows and is labelled as constructed
+ * whenever it was assembled from a naming convention, because the earlier
+ * design showed a guessed address in the same style as a confirmed one and
+ * that quietly invited people to mail strangers.
+ */
 
 interface ContactPanelProps {
   job: JobPost;
-  contact: ContactPerson | null;
-  alternateContacts: ContactPerson[];
-  error: string | null;
+  people: Person[];
   loading: boolean;
 }
 
-export function ContactPanel({ job, contact, alternateContacts, error, loading }: ContactPanelProps) {
-  const [showAlternates, setShowAlternates] = React.useState(false);
+export function ContactPanel({ job, people, loading }: ContactPanelProps) {
+  const [showAll, setShowAll] = React.useState(false);
+
+  const best = people[0] ?? null;
+  const others = people.slice(1, 4);
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-3 border-t border-border bg-muted/40 p-5">
-        <div className="flex items-center gap-3">
-          <Skeleton className="size-10 rounded-full" />
-          <div className="grid flex-1 gap-1.5">
-            <Skeleton className="h-3.5 w-32" />
-            <Skeleton className="h-3 w-24" />
-          </div>
-        </div>
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-2/3" />
+      <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        Looking for who is hiring…
       </div>
     );
   }
 
-  if (!contact) {
+  if (!best) {
     return (
-      <div className="flex items-start gap-3 border-t border-border bg-muted/40 p-5 text-sm text-muted-foreground">
+      <div className="flex items-start gap-2 border-t border-border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
         <UserSearch className="mt-0.5 size-4 shrink-0" />
-        <p>{error ?? "No decision maker found for this company."}</p>
+        <span>
+          No named recruiter found at {job.companyName}. The posting link still goes straight to their
+          application page.
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-3 border-t border-border bg-muted/40 p-5">
-      <div className="flex items-start gap-3">
-        <span
-          aria-hidden
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-sm font-semibold text-primary"
-        >
-          {initials(contact.name)}
-        </span>
+    <div className="grid grid-cols-1 gap-3 border-t border-border bg-muted/30 px-5 py-4">
+      <PersonRow person={best} job={job} primary />
 
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{contact.name}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {contact.title ?? "Title unavailable"}
-            {contact.companyName ? ` · ${contact.companyName}` : ""}
-          </p>
-        </div>
-
-        {contact.linkedinUrl && (
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer">
-              <LinkedInIcon />
-              LinkedIn
-            </a>
-          </Button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-2">
-        <ContactRow
-          icon={<Mail className="size-4 text-muted-foreground" />}
-          value={contact.email}
-          emptyLabel="No email found"
-          copyLabel="Copy email"
-        />
-        <ContactRow
-          icon={<Phone className="size-4 text-muted-foreground" />}
-          value={
-            contact.phone
-              ? contact.phoneExtension
-                ? `${contact.phone} ext. ${contact.phoneExtension}`
-                : contact.phone
-              : null
-          }
-          emptyLabel="No direct phone found"
-          copyLabel="Copy phone"
-        />
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <VerificationBadge status={contact.emailStatus} confidence={contact.confidence} />
-          <span className="text-[11px] text-muted-foreground">via {contact.source}</span>
-        </div>
-
-        <MailDraftDialog job={job} contact={contact} />
-      </div>
-
-      {alternateContacts.length > 0 && (
-        <div className="border-t border-border pt-2">
-          <Button
+      {others.length > 0 && (
+        <div className="grid grid-cols-1 gap-3">
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowAlternates((value) => !value)}
-            className="h-7 px-2 text-xs text-muted-foreground"
-            aria-expanded={showAlternates}
+            onClick={() => setShowAll((value) => !value)}
+            aria-expanded={showAll}
+            className="flex w-fit items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ChevronDown className={cn("transition-transform", showAlternates && "rotate-180")} />
-            {alternateContacts.length} other contact{alternateContacts.length > 1 ? "s" : ""} at this company
-          </Button>
+            <ChevronDown className={cn("size-3.5 transition-transform", showAll && "rotate-180")} />
+            {showAll ? "Hide" : `${others.length} more at ${job.companyName}`}
+          </button>
 
-          {showAlternates && (
-            <ul className="mt-2 grid grid-cols-1 gap-2">
-              {alternateContacts.map((alternate) => (
-                <li
-                  key={alternate.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-card px-3 py-2 text-xs"
-                >
-                  <span className="min-w-0">
-                    <span className="font-medium">{alternate.name}</span>
-                    <span className="text-muted-foreground"> · {alternate.title ?? "Title unavailable"}</span>
-                  </span>
-
-                  <span className="flex items-center gap-1">
-                    {alternate.linkedinUrl && (
-                      <a
-                        href={alternate.linkedinUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                        aria-label={`LinkedIn profile for ${alternate.name}`}
-                      >
-                        <LinkedInIcon className="size-3.5" />
-                      </a>
-                    )}
-                    {alternate.email && <CopyButton value={alternate.email} label="Copy email" />}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          {showAll && others.map((person) => <PersonRow key={person.id} person={person} job={job} />)}
         </div>
       )}
     </div>
   );
 }
 
-function ContactRow({
-  icon,
-  value,
-  emptyLabel,
-  copyLabel,
-}: {
-  icon: React.ReactNode;
-  value: string | null;
-  emptyLabel: string;
-  copyLabel: string;
-}) {
+function PersonRow({ person, job, primary = false }: { person: Person; job: JobPost; primary?: boolean }) {
+  const initials = person.name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
-      {icon}
-      <span className={cn("min-w-0 flex-1 truncate text-xs", !value && "text-muted-foreground italic")}>
-        {value ?? emptyLabel}
-      </span>
-      {value && <CopyButton value={value} label={copyLabel} />}
+    <div className={cn("grid grid-cols-1 gap-2.5", !primary && "border-t border-border/60 pt-3")}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className={cn(
+              "grid size-9 shrink-0 place-items-center rounded-full text-xs font-semibold",
+              primary ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+            )}
+            aria-hidden
+          >
+            {initials}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{person.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{person.title ?? "Role not stated"}</p>
+          </div>
+        </div>
+
+        {person.linkedinUrl && (
+          <Button asChild size="sm" variant={primary ? "default" : "outline"} className="shrink-0">
+            <a href={person.linkedinUrl} target="_blank" rel="noopener noreferrer">
+              <LinkedInIcon />
+              {primary ? "Message on LinkedIn" : "Profile"}
+            </a>
+          </Button>
+        )}
+      </div>
+
+      {person.email ? (
+        <div className="grid grid-cols-1 gap-1.5">
+          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+            <Mail className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">{person.email}</span>
+            <CopyButton value={person.email} label="Copy email" />
+          </div>
+
+          {person.emailIsPattern && (
+            <p className="flex items-start gap-1.5 text-xs text-[var(--warning)]">
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                Built from this company&rsquo;s usual first.last pattern — not confirmed. Worth trying, but
+                LinkedIn is the reliable route.
+              </span>
+            </p>
+          )}
+
+          {primary && (
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <MailDraftDialog job={job} person={person} />
+              <Badge variant="outline" className="font-normal">
+                {person.source}
+              </Badge>
+            </div>
+          )}
+        </div>
+      ) : (
+        primary && (
+          <p className="text-xs text-muted-foreground">
+            No email address found — the LinkedIn profile above is the way in.
+          </p>
+        )
+      )}
     </div>
   );
 }

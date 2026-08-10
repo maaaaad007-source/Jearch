@@ -1,4 +1,4 @@
-import type { ContactPerson, JobPost } from "@/types";
+import type { JobPost, Person } from "@/types";
 
 export interface MailDraft {
   to: string;
@@ -18,11 +18,11 @@ function firstName(fullName: string | null | undefined): string {
  */
 export function buildMailDraft(
   job: JobPost,
-  contact: ContactPerson | null,
+  person: Person | null,
   senderName = "[Your name]",
 ): MailDraft {
-  const greetingName = firstName(contact?.name);
-  const location = job.city ? `${job.city}` : job.workType === "Remote" ? "remote" : job.country ?? "";
+  const greetingName = firstName(person?.name);
+  const location = job.city ? `${job.city}` : job.workType === "Remote" ? "remote" : job.region ?? "";
   const locationClause = location ? ` (${location})` : "";
 
   const subject = `${job.title} at ${job.companyName} — quick question`;
@@ -40,7 +40,7 @@ export function buildMailDraft(
     senderName,
   ].join("\n");
 
-  return { to: contact?.email ?? "", subject, body };
+  return { to: person?.email ?? "", subject, body };
 }
 
 /** `mailto:` URL for the draft, safe for very long bodies via encodeURIComponent. */

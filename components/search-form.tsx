@@ -25,7 +25,7 @@ export function SearchForm() {
   const [highlighted, setHighlighted] = React.useState(0);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
-  const busy = status === "loading-jobs" || status === "enriching";
+  const busy = status === "searching";
   const suggestions = React.useMemo(() => suggestTitles(designation), [designation]);
 
   React.useEffect(() => {

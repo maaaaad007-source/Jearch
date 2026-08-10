@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { isSupabaseConfigured, serverEnv } from "@/lib/env";
+import { config } from "@/lib/config";
 
 export const SAVED_JOBS_TABLE = "saved_jobs";
 
@@ -14,10 +14,10 @@ let cached: SupabaseClient | null = null;
  * `configured: false` so the client knows not to expect server state.
  */
 export function getSupabase(): SupabaseClient | null {
-  if (!isSupabaseConfigured()) return null;
+  if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
   if (cached) return cached;
 
-  cached = createClient(serverEnv.supabaseUrl!, serverEnv.supabaseAnonKey!, {
+  cached = createClient(config.supabaseUrl, config.supabaseAnonKey, {
     auth: { persistSession: false },
   });
   return cached;

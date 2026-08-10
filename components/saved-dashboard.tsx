@@ -3,14 +3,12 @@
 import * as React from "react";
 import Link from "next/link";
 import {
-  BadgeCheck,
   Bookmark,
   Building2,
   CloudOff,
   Download,
   Mail,
   MapPin,
-  Phone,
   Trash2,
 } from "lucide-react";
 
@@ -19,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CopyButton } from "@/components/copy-button";
 import { LinkedInIcon } from "@/components/icons/linkedin";
-import { EmptyState } from "@/components/results-grid";
 import { MailDraftDialog } from "@/components/mail-draft-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { formatSalary, relativeTime } from "@/lib/utils";
@@ -39,8 +36,7 @@ function toCsv(opportunities: SavedOpportunity[]): string {
     "Contact title",
     "LinkedIn",
     "Email",
-    "Email status",
-    "Phone",
+    "Email confidence",
     "Notes",
   ];
 
@@ -50,17 +46,16 @@ function toCsv(opportunities: SavedOpportunity[]): string {
     [
       item.job.title,
       item.job.companyName,
-      [item.job.city, item.job.country].filter(Boolean).join(", "),
+      [item.job.city, item.job.region].filter(Boolean).join(", "),
       item.job.workType,
       formatSalary(item.job.salary) ?? "",
       item.job.postedAt ?? "",
       item.job.applyUrl ?? "",
-      item.contact?.name ?? "",
-      item.contact?.title ?? "",
-      item.contact?.linkedinUrl ?? "",
-      item.contact?.email ?? "",
-      item.contact?.emailStatus ?? "",
-      item.contact?.phone ?? "",
+      item.person?.name ?? "",
+      item.person?.title ?? "",
+      item.person?.linkedinUrl ?? "",
+      item.person?.email ?? "",
+      item.person?.emailIsPattern ? "pattern guess" : item.person?.email ? "found" : "",
       item.notes ?? "",
     ]
       .map(escape)
@@ -99,11 +94,7 @@ export function SavedDashboard() {
 
   if (opportunities.length === 0) {
     return (
-      <EmptyState
-        icon={<Bookmark className="size-6" />}
-        title="No saved opportunities yet"
-        description="Bookmark a job from the search results and it will show up here with its contact card, ready for outreach."
-      />
+      <EmptyState />
     );
   }
 
@@ -152,7 +143,7 @@ function SavedCard({
   onNotes: (jobId: string, notes: string) => void;
 }) {
   const [notes, setLocalNotes] = React.useState(item.notes ?? "");
-  const location = [item.job.city, item.job.country].filter(Boolean).join(", ");
+  const location = [item.job.city, item.job.region].filter(Boolean).join(", ");
   const salary = formatSalary(item.job.salary);
 
   return (
@@ -189,30 +180,24 @@ function SavedCard({
         <Badge variant="muted">Saved {relativeTime(item.savedAt) ?? "recently"}</Badge>
       </div>
 
-      {item.contact ? (
+      {item.person ? (
         <div className="grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/40 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{item.contact.name}</p>
+              <p className="truncate text-sm font-medium">{item.person.name}</p>
               <p className="truncate text-xs text-muted-foreground">
-                {item.contact.title ?? "Title unavailable"}
+                {item.person.title ?? "Title unavailable"}
               </p>
             </div>
 
             <div className="flex items-center gap-1">
-              {item.contact.emailStatus === "verified" && (
-                <Badge variant="success">
-                  <BadgeCheck />
-                  Verified
-                </Badge>
-              )}
-              {item.contact.linkedinUrl && (
+              {item.person.linkedinUrl && (
                 <Button asChild variant="ghost" size="icon" className="size-7">
                   <a
-                    href={item.contact.linkedinUrl}
+                    href={item.person.linkedinUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    aria-label={`LinkedIn profile for ${item.contact.name}`}
+                    aria-label={`LinkedIn profile for ${item.person.name}`}
                   >
                     <LinkedInIcon className="size-3.5" />
                   </a>
@@ -221,23 +206,21 @@ function SavedCard({
             </div>
           </div>
 
-          {item.contact.email && (
+          {item.person.email && (
             <div className="flex items-center gap-2 text-xs">
               <Mail className="size-3.5 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{item.contact.email}</span>
-              <CopyButton value={item.contact.email} label="Copy email" />
+              <span className="min-w-0 flex-1 truncate">{item.person.email}</span>
+              <CopyButton value={item.person.email} label="Copy email" />
             </div>
           )}
 
-          {item.contact.phone && (
-            <div className="flex items-center gap-2 text-xs">
-              <Phone className="size-3.5 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{item.contact.phone}</span>
-              <CopyButton value={item.contact.phone} label="Copy phone" />
-            </div>
+          {item.person.emailIsPattern && item.person.email && (
+            <p className="text-xs text-[var(--warning)]">
+              Address was built from a naming pattern, not confirmed.
+            </p>
           )}
 
-          <MailDraftDialog job={item.job} contact={item.contact} />
+          <MailDraftDialog job={item.job} person={item.person} />
         </div>
       ) : (
         <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
@@ -268,5 +251,20 @@ function SavedCard({
         </Button>
       )}
     </Card>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-border px-6 py-16 text-center">
+      <Bookmark className="size-6 text-muted-foreground" />
+      <div className="grid gap-1">
+        <p className="font-medium">No saved opportunities yet</p>
+        <p className="mx-auto max-w-md text-sm text-muted-foreground">
+          Bookmark a job from the search results and it will show up here with whoever we found to
+          contact, ready for outreach.
+        </p>
+      </div>
+    </div>
   );
 }

@@ -1,16 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Bookmark,
-  BookmarkCheck,
-  Building2,
-  ChevronDown,
-  ExternalLink,
-  MapPin,
-  Sparkles,
-  Wallet,
-} from "lucide-react";
+import { Bookmark, BookmarkCheck, Building2, ChevronDown, ExternalLink, MapPin, Wallet } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +10,7 @@ import { ContactPanel } from "@/components/contact-panel";
 import { cn, formatSalary, isFresh, relativeTime } from "@/lib/utils";
 import { stripHtml } from "@/lib/text";
 import { useSavedStore } from "@/store/use-saved-store";
-import type { JobWithContact, WorkType } from "@/types";
+import type { JobPost, Person, WorkType } from "@/types";
 
 const WORK_TYPE_STYLE: Record<WorkType, string> = {
   Remote: "bg-[color-mix(in_oklch,var(--success)_18%,transparent)] text-[var(--success)]",
@@ -29,13 +20,13 @@ const WORK_TYPE_STYLE: Record<WorkType, string> = {
 };
 
 interface JobCardProps {
-  result: JobWithContact;
-  /** True while contact enrichment for this batch is still in flight. */
-  enriching: boolean;
+  job: JobPost;
+  people: Person[] | undefined;
+  /** True while the people lookup for this batch is still in flight. */
+  loadingPeople: boolean;
 }
 
-export function JobCard({ result, enriching }: JobCardProps) {
-  const { job, contact, alternateContacts, contactError } = result;
+export function JobCard({ job, people, loadingPeople }: JobCardProps) {
   const [expanded, setExpanded] = React.useState(false);
 
   const toggle = useSavedStore((s) => s.toggle);
@@ -43,8 +34,9 @@ export function JobCard({ result, enriching }: JobCardProps) {
 
   const salary = formatSalary(job.salary);
   const posted = relativeTime(job.postedAt);
-  const location = [job.city, job.country].filter(Boolean).join(", ");
-  const fullDescription = job.description ? stripHtml(job.description) : null;
+  const location = [job.city, job.region].filter(Boolean).join(", ");
+  const description = job.description ? stripHtml(job.description) : null;
+  const best = people?.[0] ?? null;
 
   return (
     <Card className="animate-in-up flex flex-col overflow-hidden transition-shadow hover:shadow-md">
@@ -59,95 +51,93 @@ export function JobCard({ result, enriching }: JobCardProps) {
           </div>
 
           <Button
-            type="button"
-            variant={saved ? "secondary" : "ghost"}
+            variant="ghost"
             size="icon"
-            onClick={() => toggle(job, contact)}
+            aria-label={saved ? "Remove from saved" : "Save this opportunity"}
             aria-pressed={saved}
-            aria-label={saved ? "Remove from saved opportunities" : "Save this opportunity"}
-            title={saved ? "Saved" : "Save opportunity"}
+            onClick={() => toggle(job, best)}
             className="shrink-0"
           >
-            {saved ? <BookmarkCheck className="text-primary" /> : <Bookmark />}
+            {saved ? <BookmarkCheck className="text-[var(--success)]" /> : <Bookmark />}
           </Button>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="muted" className={cn(WORK_TYPE_STYLE[job.workType])}>
-            {job.workType}
-          </Badge>
+          <Badge className={cn("font-medium", WORK_TYPE_STYLE[job.workType])}>{job.workType}</Badge>
 
           {location && (
-            <Badge variant="outline">
-              <MapPin />
+            <Badge variant="outline" className="gap-1 font-normal">
+              <MapPin className="size-3" />
               {location}
             </Badge>
           )}
 
           {salary && (
-            <Badge variant="outline">
-              <Wallet />
+            <Badge variant="outline" className="gap-1 font-normal">
+              <Wallet className="size-3" />
               {salary}
             </Badge>
           )}
 
           {posted && (
-            <Badge variant={isFresh(job.postedAt) ? "success" : "muted"}>
-              {isFresh(job.postedAt) && <Sparkles />}
-              {isFresh(job.postedAt) ? `New · ${posted}` : posted}
+            <Badge
+              variant="outline"
+              className={cn(
+                "font-normal",
+                isFresh(job.postedAt) &&
+                  "border-transparent bg-[color-mix(in_oklch,var(--success)_18%,transparent)] text-[var(--success)]",
+              )}
+            >
+              {posted}
             </Badge>
           )}
         </div>
 
         <p className="text-sm leading-relaxed text-muted-foreground">{job.summary}</p>
 
-        {(fullDescription || job.applyUrl) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {fullDescription && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setExpanded((value) => !value)}
-                aria-expanded={expanded}
-                className="h-7 px-2 text-xs text-muted-foreground"
-              >
-                <ChevronDown className={cn("transition-transform", expanded && "rotate-180")} />
-                {expanded ? "Hide full description" : "Key responsibilities"}
-              </Button>
-            )}
+        {description && (
+          <div className="grid gap-2">
+            <button
+              type="button"
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={expanded}
+              className="flex w-fit items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-primary"
+            >
+              <ChevronDown className={cn("size-4 transition-transform", expanded && "rotate-180")} />
+              {expanded ? "Hide full description" : "Read full description"}
+            </button>
 
-            {job.applyUrl && (
-              <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground">
-                <a href={job.applyUrl} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink />
-                  View posting
-                </a>
-              </Button>
+            {expanded && (
+              <p className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
+                {description}
+              </p>
             )}
-
-            {/* Results can span several boards in one search, so each card
-                names where its posting came from. */}
-            <span className="ml-auto text-[11px] text-muted-foreground">{job.source}</span>
           </div>
         )}
 
-        {expanded && fullDescription && (
-          <div className="max-h-72 overflow-y-auto rounded-md border border-border bg-muted/50 p-3 text-xs leading-relaxed whitespace-pre-line text-muted-foreground">
-            {fullDescription}
-          </div>
-        )}
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          {job.applyUrl ? (
+            <a
+              href={job.applyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-primary"
+            >
+              <ExternalLink className="size-4" />
+              View posting
+            </a>
+          ) : (
+            <span />
+          )}
+          <span className="shrink-0">{job.source}</span>
+        </div>
       </div>
 
-      <div className="mt-auto">
-        <ContactPanel
-          job={job}
-          contact={contact}
-          alternateContacts={alternateContacts}
-          error={contactError}
-          loading={enriching && !contact && !contactError}
-        />
-      </div>
+      <ContactPanel
+        job={job}
+        people={people ?? []}
+        loading={loadingPeople}
+      />
     </Card>
   );
 }

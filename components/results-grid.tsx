@@ -1,171 +1,215 @@
 "use client";
 
-import { AlertTriangle, FlaskConical, Loader2, Plus, SearchX, Target } from "lucide-react";
+import { AlertTriangle, Info, SearchX, Settings2 } from "lucide-react";
+import Link from "next/link";
 
-import { JobCard } from "@/components/job-card";
-import { ResultsSkeletonGrid } from "@/components/job-card-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { JobCard } from "@/components/job-card";
+import { JobCardSkeleton } from "@/components/job-card-skeleton";
 import { countryName } from "@/lib/countries";
 import { useSearchStore } from "@/store/use-search-store";
-
-const JOB_PROVIDER_LABELS: Record<string, string> = {
-  jsearch: "JSearch",
-  theirstack: "TheirStack",
-  serper: "Job boards via Serper",
-  demo: "Demo data",
-};
-
-const CONTACT_PROVIDER_LABELS: Record<string, string> = {
-  apollo: "Apollo.io",
-  hunter: "Hunter.io",
-  serper: "LinkedIn via Serper",
-  demo: "Demo data",
-};
-
-/** "Growth Marketer at Spotify in Germany" — whichever parts were filled in. */
-function describeQuery(query: { designation: string; company: string; country: string }): string {
-  const parts: string[] = [];
-  if (query.designation) parts.push(`“${query.designation}”`);
-  if (query.company) parts.push(`at ${query.company}`);
-  parts.push(`in ${countryName(query.country)}`);
-  return parts.join(" ");
-}
+import type { RankedJob } from "@/types";
 
 export function ResultsGrid() {
   const status = useSearchStore((s) => s.status);
   const error = useSearchStore((s) => s.error);
-  const results = useSearchStore((s) => s.results);
-  const demo = useSearchStore((s) => s.demo);
-  const jobProvider = useSearchStore((s) => s.jobProvider);
-  const contactProvider = useSearchStore((s) => s.contactProvider);
-  const lastQuery = useSearchStore((s) => s.lastQuery);
-  const hasMore = useSearchStore((s) => s.hasMore);
-  const notice = useSearchStore((s) => s.notice);
-  const loadMore = useSearchStore((s) => s.loadMore);
+  const exact = useSearchStore((s) => s.exact);
+  const close = useSearchStore((s) => s.close);
+  const sources = useSearchStore((s) => s.sources);
+  const examined = useSearchStore((s) => s.examined);
+  const blocked = useSearchStore((s) => s.blocked);
+  const searched = useSearchStore((s) => s.searched);
+  const peopleByCompany = useSearchStore((s) => s.peopleByCompany);
+  const peopleStatus = useSearchStore((s) => s.peopleStatus);
+  const peopleError = useSearchStore((s) => s.peopleError);
 
-  if (status === "idle") {
+  if (status === "idle") return <EmptyState />;
+
+  if (status === "searching") {
     return (
-      <EmptyState
-        icon={<Target className="size-6" />}
-        title="Search a role to see who is hiring for it"
-        description="Enter a job title, a company, or both. You get the live postings plus the recruiter or hiring manager behind each one — name, LinkedIn, work email and phone where available."
-      />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }, (_, index) => (
+          <JobCardSkeleton key={index} />
+        ))}
+      </div>
     );
   }
 
   if (status === "error") {
     return (
-      <EmptyState
-        icon={<AlertTriangle className="size-6 text-[var(--destructive)]" />}
-        title="That search did not go through"
-        description={error ?? "Something went wrong. Try again in a moment."}
-      />
+      <Notice tone="error" icon={<AlertTriangle className="size-4" />}>
+        {error ?? "That search did not go through."}
+      </Notice>
     );
   }
 
-  if (status === "loading-jobs") {
-    return <ResultsSkeletonGrid />;
-  }
-
-  if (results.length === 0) {
-    // The provider badges belong here most of all: "no results" is meaningless
-    // without knowing which source was actually asked.
+  if (blocked) {
     return (
-      <div className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {demo && (
-            <Badge variant="warning">
-              <FlaskConical />
-              Demo data
-            </Badge>
-          )}
-          {jobProvider && <Badge variant="muted">Searched: {JOB_PROVIDER_LABELS[jobProvider] ?? jobProvider}</Badge>}
-        </div>
-
-        <EmptyState
-          icon={<SearchX className="size-6" />}
-          title="No postings matched that search"
-          description={
-            notice ??
-            (lastQuery
-              ? `Nothing active for ${describeQuery(lastQuery)} right now. Try a broader title, drop the company filter, or pick another country.`
-              : "Try a broader title or a different country.")
-          }
-        />
-      </div>
-    );
-  }
-
-  const enriching = status === "enriching";
-  const loadingMore = status === "loading-more";
-
-  return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{results.length}</span> opening
-          {results.length === 1 ? "" : "s"}
-          {lastQuery ? ` for ${describeQuery(lastQuery)}` : ""}
-          {enriching ? " · finding decision makers…" : ""}
-        </p>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          {demo && (
-            <Badge variant="warning" title="No provider API keys configured — results are synthetic sample data.">
-              <FlaskConical />
-              Demo data
-            </Badge>
-          )}
-          {jobProvider && <Badge variant="muted">Jobs: {JOB_PROVIDER_LABELS[jobProvider] ?? jobProvider}</Badge>}
-          {contactProvider && (
-            <Badge variant="muted">Contacts: {CONTACT_PROVIDER_LABELS[contactProvider] ?? contactProvider}</Badge>
-          )}
-        </div>
-      </div>
-
-      {(error || notice) && (
-        <p className="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-          {error ?? notice}
-        </p>
-      )}
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {results.map((result) => (
-          <JobCard key={result.job.id} result={result} enriching={enriching || loadingMore} />
-        ))}
-      </div>
-
-      {hasMore && (
-        <div className="flex justify-center pt-2">
-          <Button variant="outline" size="lg" onClick={() => void loadMore()} disabled={loadingMore}>
-            {loadingMore ? <Loader2 className="animate-spin" /> : <Plus />}
-            {loadingMore ? "Loading…" : "Load more results"}
+      <div className="grid grid-cols-1 gap-3">
+        <Notice tone="warning" icon={<Settings2 className="size-4" />}>
+          {blocked}
+        </Notice>
+        <div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/setup">Open setup check</Link>
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  const total = exact.length + close.length;
+  const label = searched
+    ? [
+        searched.designation && `“${searched.designation}”`,
+        searched.company && `at ${searched.company}`,
+        `in ${countryName(searched.country) ?? searched.country}`,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "";
+
+  const loadingPeople = peopleStatus === "loading";
+
+  return (
+    <div className="grid grid-cols-1 gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          <span className="font-semibold text-foreground">{total}</span> {total === 1 ? "match" : "matches"}{" "}
+          for {label}
+          {examined > total && (
+            <span className="text-muted-foreground"> · {examined} distinct postings considered</span>
+          )}
+        </p>
+
+        <div className="flex flex-wrap gap-1.5">
+          {sources.map((source) => (
+            <Badge key={source.id} variant={source.error ? "destructive" : "outline"} className="font-normal">
+              {source.label}
+              {source.error ? " unavailable" : ` · ${source.contributed} fetched`}
+            </Badge>
+          ))}
+        </div>
+      </div>
+
+      {sources
+        .filter((source) => source.error)
+        .map((source) => (
+          <Notice key={source.id} tone="warning" icon={<AlertTriangle className="size-4" />}>
+            {source.error}
+          </Notice>
+        ))}
+
+      {peopleError && (
+        <Notice tone="warning" icon={<AlertTriangle className="size-4" />}>
+          Contact lookup failed: {peopleError}
+        </Notice>
+      )}
+
+      {total === 0 && (
+        <Notice tone="info" icon={<SearchX className="size-4" />}>
+          Nothing matched {label}. {examined > 0
+            ? `${examined} postings were examined but none were close enough to the title.`
+            : "The databases returned no postings at all for this country — try a broader job title."}
+        </Notice>
+      )}
+
+      {exact.length > 0 && (
+        <Tier
+          title="Matches"
+          jobs={exact}
+          peopleByCompany={peopleByCompany}
+          loadingPeople={loadingPeople}
+        />
+      )}
+
+      {close.length > 0 && (
+        <Tier
+          title="Close matches"
+          description="Related roles that did not match the title exactly — shown so nothing useful is hidden."
+          jobs={close}
+          peopleByCompany={peopleByCompany}
+          loadingPeople={loadingPeople}
+        />
       )}
     </div>
   );
 }
 
-export function EmptyState({
-  icon,
+function Tier({
   title,
   description,
+  jobs,
+  peopleByCompany,
+  loadingPeople,
 }: {
-  icon: React.ReactNode;
   title: string;
-  description: string;
+  description?: string;
+  jobs: RankedJob[];
+  peopleByCompany: Record<string, import("@/types").Person[]>;
+  loadingPeople: boolean;
 }) {
   return (
-    <div className="grid place-items-center rounded-lg border border-dashed border-border bg-card/50 px-6 py-16 text-center">
-      <div className="grid max-w-md gap-2">
-        <span className="mx-auto grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
-          {icon}
-        </span>
-        <h2 className="text-base font-semibold">{title}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
+    <section className="grid grid-cols-1 gap-3">
+      <div className="grid gap-0.5">
+        <h2 className="text-sm font-semibold tracking-tight">
+          {title} <span className="text-muted-foreground">({jobs.length})</span>
+        </h2>
+        {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {jobs.map(({ job }) => (
+          <JobCard
+            key={job.id}
+            job={job}
+            people={peopleByCompany[job.companyName]}
+            loadingPeople={loadingPeople && !peopleByCompany[job.companyName]}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="grid place-items-center gap-3 rounded-lg border border-dashed border-border px-6 py-16 text-center">
+      <SearchX className="size-8 text-muted-foreground" />
+      <div className="grid gap-1">
+        <p className="font-medium">Search a job title and country to begin.</p>
+        <p className="mx-auto max-w-md text-sm text-muted-foreground">
+          Postings come from Adzuna and, for Sweden, Platsbanken — real job databases, several pages at a
+          time. Contacts come from LinkedIn via Serper.
+        </p>
+      </div>
+      <Button asChild variant="ghost" size="sm">
+        <Link href="/setup">Check what&rsquo;s connected</Link>
+      </Button>
+    </div>
+  );
+}
+
+function Notice({
+  tone,
+  icon,
+  children,
+}: {
+  tone: "info" | "warning" | "error";
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const style = {
+    info: "border-border bg-muted/40 text-muted-foreground",
+    warning: "border-[var(--warning)]/40 bg-[color-mix(in_oklch,var(--warning)_10%,transparent)] text-foreground",
+    error: "border-destructive/40 bg-destructive/10 text-foreground",
+  }[tone];
+
+  return (
+    <div className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${style}`}>
+      <span className="mt-0.5 shrink-0">{icon ?? <Info className="size-4" />}</span>
+      <span>{children}</span>
     </div>
   );
 }

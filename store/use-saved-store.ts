@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
-import type { ContactPerson, JobPost, SavedOpportunity } from "@/types";
+import type { JobPost, Person, SavedOpportunity } from "@/types";
 
 interface SavedState {
   opportunities: SavedOpportunity[];
@@ -15,9 +15,9 @@ interface SavedState {
 
   isSaved: (jobId: string) => boolean;
   setHydrated: () => void;
-  save: (job: JobPost, contact: ContactPerson | null) => void;
+  save: (job: JobPost, person: Person | null) => void;
   remove: (jobId: string) => void;
-  toggle: (job: JobPost, contact: ContactPerson | null) => void;
+  toggle: (job: JobPost, person: Person | null) => void;
   setNotes: (jobId: string, notes: string) => void;
   clear: () => void;
   syncFromRemote: () => Promise<void>;
@@ -52,13 +52,13 @@ export const useSavedStore = create<SavedState>()(
 
       setHydrated: () => set({ hydrated: true }),
 
-      save: (job, contact) => {
+      save: (job, person) => {
         if (get().isSaved(job.id)) return;
 
         const opportunity: SavedOpportunity = {
           id: job.id,
           job,
-          contact,
+          person,
           savedAt: new Date().toISOString(),
           notes: null,
         };
@@ -83,9 +83,9 @@ export const useSavedStore = create<SavedState>()(
         void pushRemote(`/api/saved?${query.toString()}`, { method: "DELETE" });
       },
 
-      toggle: (job, contact) => {
+      toggle: (job, person) => {
         if (get().isSaved(job.id)) get().remove(job.id);
-        else get().save(job, contact);
+        else get().save(job, person);
       },
 
       setNotes: (jobId, notes) => {

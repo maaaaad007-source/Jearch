@@ -2,307 +2,178 @@
 
 import { create } from "zustand";
 
-import { companyKey } from "@/lib/company";
-import { DEFAULT_COUNTRY } from "@/lib/countries";
-import type { ContactPerson, ContactsApiResponse, JobWithContact, JobsApiResponse } from "@/types";
+import type { PeopleResponse, Person, RankedJob, SearchResponse, SourceReport } from "@/types";
 
-type SearchStatus = "idle" | "loading-jobs" | "enriching" | "loading-more" | "success" | "error";
+/**
+ * Search state, in two phases.
+ *
+ * Jobs paint as soon as the databases answer; the people lookup is a second,
+ * slower round trip that fills the contact panels afterwards. Waiting for both
+ * before showing anything made every search feel broken, and the postings are
+ * useful on their own.
+ */
 
-interface Query {
-  designation: string;
-  company: string;
-  country: string;
-}
+type Status = "idle" | "searching" | "ready" | "error";
+type PeopleStatus = "idle" | "loading" | "done";
+
+/** How many employers to look people up for. Each one is a paid search. */
+const PEOPLE_BUDGET = 12;
 
 interface SearchState {
   designation: string;
   company: string;
   country: string;
-  status: SearchStatus;
+
+  status: Status;
   error: string | null;
-  results: JobWithContact[];
-  jobProvider: string | null;
-  contactProvider: string | null;
-  /** True when either side of the pipeline fell back to seeded sample data. */
-  demo: boolean;
-  lastQuery: Query | null;
-  page: number;
-  hasMore: boolean;
-  /** Explains a provider fallback, when one happened. */
-  notice: string | null;
+
+  exact: RankedJob[];
+  close: RankedJob[];
+  sources: SourceReport[];
+  examined: number;
+  blocked: string | null;
+  /** The query the visible results answer, so headings cannot drift. */
+  searched: { designation: string; company: string; country: string } | null;
+
+  peopleByCompany: Record<string, Person[]>;
+  peopleStatus: PeopleStatus;
+  peopleError: string | null;
 
   setDesignation: (value: string) => void;
   setCompany: (value: string) => void;
   setCountry: (value: string) => void;
   search: () => Promise<void>;
-  loadMore: () => Promise<void>;
-  reset: () => void;
+  /** Phase two of `search`; not meant to be called on its own. */
+  lookUpPeople: (controller: AbortController) => Promise<void>;
 }
 
-async function readError(response: Response, fallback: string): Promise<string> {
-  try {
-    const payload = (await response.json()) as { error?: string };
-    return payload.error || fallback;
-  } catch {
-    return fallback;
-  }
-}
+let inFlight: AbortController | null = null;
 
-async function fetchJobs(query: Query, page: number): Promise<JobsApiResponse> {
-  const params = new URLSearchParams({ country: query.country, page: String(page) });
-  if (query.designation) params.set("designation", query.designation);
-  if (query.company) params.set("company", query.company);
-
-  const response = await fetch(`/api/jobs?${params.toString()}`);
-  if (!response.ok) throw new Error(await readError(response, "Job search failed"));
-  return (await response.json()) as JobsApiResponse;
-}
-
-async function fetchContacts(
-  companies: Array<{ domain: string | null; companyName: string }>,
-): Promise<ContactsApiResponse> {
-  const response = await fetch("/api/contacts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ companies }),
-  });
-  if (!response.ok) throw new Error(await readError(response, "Contact enrichment failed"));
-  return (await response.json()) as ContactsApiResponse;
-}
-
-function toPendingResults(payload: JobsApiResponse): JobWithContact[] {
-  return payload.jobs.map((job) => ({
-    job,
-    contact: null,
-    alternateContacts: [],
-    contactError: null,
-  }));
-}
-
-const NO_CONTACT = "No decision maker found for this company.";
-
-/** Matches the server's keying so a card can find its own contacts. */
-function keyForJob(job: { companyName: string; companyDomain: string | null }): string {
-  return companyKey({ companyName: job.companyName, domain: job.companyDomain });
-}
-
-function applyContacts(
-  results: JobWithContact[],
-  contactsByDomain: Record<string, ContactPerson[]>,
-  batchDomains: Set<string>,
-  batchError: string | null,
-): JobWithContact[] {
-  return results.map((result) => {
-    const key = keyForJob(result.job);
-
-    const contacts = contactsByDomain[key];
-    if (!contacts) {
-      // The whole batch failed — say so, rather than letting a bad API key
-      // masquerade as "this company has nobody".
-      if (batchError && batchDomains.has(key)) return { ...result, contactError: batchError };
-
-      // Otherwise this company was not part of this batch; leave whatever the
-      // card already had rather than blanking an earlier result.
-      return result;
-    }
-
-    return {
-      ...result,
-      contact: contacts[0] ?? null,
-      alternateContacts: contacts.slice(1),
-      contactError: contacts.length > 0 ? null : NO_CONTACT,
-    };
-  });
-}
-
-/**
- * The search pipeline runs in two visible phases so the grid can paint job
- * cards as soon as the board responds, then fill in decision-maker panels when
- * enrichment lands. Waiting for both would double the perceived latency.
- */
 export const useSearchStore = create<SearchState>((set, get) => ({
   designation: "",
   company: "",
-  country: DEFAULT_COUNTRY,
+  country: "NL",
+
   status: "idle",
   error: null,
-  results: [],
-  jobProvider: null,
-  contactProvider: null,
-  demo: false,
-  lastQuery: null,
-  page: 1,
-  hasMore: false,
-  notice: null,
+
+  exact: [],
+  close: [],
+  sources: [],
+  examined: 0,
+  blocked: null,
+  searched: null,
+
+  peopleByCompany: {},
+  peopleStatus: "idle",
+  peopleError: null,
 
   setDesignation: (value) => set({ designation: value }),
   setCompany: (value) => set({ company: value }),
   setCountry: (value) => set({ country: value }),
 
   search: async () => {
-    const query: Query = {
-      designation: get().designation.trim(),
-      company: get().company.trim(),
-      country: get().country,
-    };
+    const { designation, company, country } = get();
 
-    if (query.designation.length < 2 && query.company.length < 2) {
+    if (designation.trim().length < 2 && company.trim().length < 2) {
+      set({ status: "error", error: "Enter a job title or a company name." });
+      return;
+    }
+
+    // A second search while one is running should replace it, not race it.
+    inFlight?.abort();
+    const controller = new AbortController();
+    inFlight = controller;
+
+    set({
+      status: "searching",
+      error: null,
+      exact: [],
+      close: [],
+      sources: [],
+      examined: 0,
+      blocked: null,
+      peopleByCompany: {},
+      peopleStatus: "idle",
+      peopleError: null,
+      searched: { designation: designation.trim(), company: company.trim(), country },
+    });
+
+    const query = new URLSearchParams({
+      designation: designation.trim(),
+      company: company.trim(),
+      country,
+    });
+
+    try {
+      const response = await fetch(`/api/search?${query}`, { signal: controller.signal });
+      const payload = (await response.json()) as SearchResponse & { error?: string };
+
+      if (!response.ok) throw new Error(payload.error ?? "The search could not be completed.");
+
+      set({
+        status: "ready",
+        exact: payload.exact,
+        close: payload.close,
+        sources: payload.sources,
+        examined: payload.examined,
+        blocked: payload.blocked,
+      });
+
+      void get().lookUpPeople(controller);
+    } catch (error) {
+      if (controller.signal.aborted) return;
       set({
         status: "error",
-        error: "Enter a job title or a company name (at least 2 characters).",
+        error: error instanceof Error ? error.message : "The search could not be completed.",
       });
-      return;
     }
-
-    set({
-      status: "loading-jobs",
-      error: null,
-      results: [],
-      page: 1,
-      hasMore: false,
-      lastQuery: query,
-      contactProvider: null,
-      notice: null,
-    });
-
-    let payload: JobsApiResponse;
-    try {
-      payload = await fetchJobs(query, 1);
-    } catch (error) {
-      set({ status: "error", error: error instanceof Error ? error.message : "Job search failed" });
-      return;
-    }
-
-    const results = toPendingResults(payload);
-
-    set({
-      status: results.length > 0 ? "enriching" : "success",
-      results,
-      jobProvider: payload.provider,
-      demo: payload.demo,
-      hasMore: payload.hasMore,
-      notice: payload.notice,
-    });
-
-    if (results.length > 0) await enrich(set, get, results, payload.demo);
   },
 
-  loadMore: async () => {
-    const query = get().lastQuery;
-    const status = get().status;
-    if (!query || !get().hasMore || status === "loading-more" || status === "loading-jobs") return;
+  lookUpPeople: async (controller) => {
+    const { exact, close } = get();
 
-    const nextPage = get().page + 1;
-    set({ status: "loading-more", error: null });
+    // Exact matches first — if the budget runs out, it should run out on the
+    // results the user is least likely to act on.
+    const companies: Array<{ companyName: string; domain: string | null }> = [];
+    const seen = new Set<string>();
 
-    let payload: JobsApiResponse;
+    for (const { job } of [...exact, ...close]) {
+      if (companies.length >= PEOPLE_BUDGET) break;
+      if (job.companyName === "Unknown company" || seen.has(job.companyName)) continue;
+
+      seen.add(job.companyName);
+      companies.push({ companyName: job.companyName, domain: job.companyDomain });
+    }
+
+    if (companies.length === 0) {
+      set({ peopleStatus: "done" });
+      return;
+    }
+
+    set({ peopleStatus: "loading" });
+
     try {
-      payload = await fetchJobs(query, nextPage);
-    } catch (error) {
+      const response = await fetch("/api/people", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ companies }),
+        signal: controller.signal,
+      });
+
+      const payload = (await response.json()) as PeopleResponse & { error?: string };
+
       set({
-        status: "success",
-        error: error instanceof Error ? error.message : "Could not load more results",
+        peopleStatus: "done",
+        peopleByCompany: payload.peopleByCompany ?? {},
+        peopleError: payload.error ?? null,
       });
-      return;
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      set({
+        peopleStatus: "done",
+        peopleError: error instanceof Error ? error.message : "Contact lookup failed.",
+      });
     }
-
-    // Boards repeat postings across pages often enough that deduping by id is
-    // worth the two lines.
-    const seen = new Set(get().results.map((result) => result.job.id));
-    const fresh = toPendingResults(payload).filter((result) => !seen.has(result.job.id));
-    const combined = [...get().results, ...fresh];
-
-    set({
-      status: fresh.length > 0 ? "enriching" : "success",
-      results: combined,
-      page: nextPage,
-      hasMore: payload.hasMore && fresh.length > 0,
-      demo: get().demo || payload.demo,
-    });
-
-    if (fresh.length > 0) await enrich(set, get, fresh, payload.demo);
   },
-
-  reset: () =>
-    set({
-      status: "idle",
-      error: null,
-      results: [],
-      jobProvider: null,
-      contactProvider: null,
-      demo: false,
-      lastQuery: null,
-      page: 1,
-      hasMore: false,
-      notice: null,
-    }),
 }));
-
-type Setter = (partial: Partial<SearchState>) => void;
-type Getter = () => SearchState;
-
-/**
- * Enrich a slice of results in place. Only the domains in `pending` are sent,
- * so paging never re-bills a domain that was already looked up.
- */
-async function enrich(set: Setter, get: Getter, pending: JobWithContact[], jobsAreDemo: boolean) {
-  const alreadyEnriched = new Set(
-    get()
-      .results.filter((result) => result.contact || result.contactError)
-      .map((result) => keyForJob(result.job)),
-  );
-
-  const seen = new Set<string>();
-  const companies = pending
-    .filter((result) => {
-      // A posting whose employer could not be parsed has nothing to look up,
-      // and searching for "Unknown company" would burn a credit on nonsense.
-      if (!result.job.companyName || /^unknown company$/i.test(result.job.companyName)) return false;
-
-      const key = keyForJob(result.job);
-      if (alreadyEnriched.has(key) || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map((result) => ({
-      domain: result.job.companyDomain,
-      companyName: result.job.companyName,
-    }));
-
-  if (companies.length === 0) {
-    set({
-      status: "success",
-      results: get().results.map((result) =>
-        result.contact || result.contactError
-          ? result
-          : { ...result, contactError: "This posting did not name an employer, so there was nobody to look up." },
-      ),
-    });
-    return;
-  }
-
-  try {
-    const payload = await fetchContacts(companies);
-    const batchDomains = new Set(companies.map((company) => companyKey(company)));
-
-    set({
-      status: "success",
-      contactProvider: payload.provider,
-      // Only flag the run as demo when the job side was synthetic too — real
-      // postings with demo contacts would make the banner misleading.
-      demo: jobsAreDemo || payload.demo,
-      results: applyContacts(get().results, payload.contactsByDomain, batchDomains, payload.error),
-    });
-  } catch (error) {
-    // Enrichment is additive — a failure leaves the job cards intact.
-    const message = error instanceof Error ? error.message : "Contact enrichment failed";
-    const pendingIds = new Set(pending.map((result) => result.job.id));
-
-    set({
-      status: "success",
-      results: get().results.map((result) =>
-        pendingIds.has(result.job.id) && !result.contact ? { ...result, contactError: message } : result,
-      ),
-    });
-  }
-}
