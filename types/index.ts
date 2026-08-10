@@ -36,6 +36,12 @@ export interface JobPost {
   description: string | null;
   /** Human label for where this came from, e.g. "Adzuna". */
   source: string;
+  /**
+   * True when this came from the employer's own careers board rather than an
+   * aggregator's copy of it. The primary record: fresher, fuller description,
+   * and the version to keep when the same opening arrives twice.
+   */
+  directFromEmployer: boolean;
 }
 
 /**

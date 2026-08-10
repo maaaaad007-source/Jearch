@@ -3,6 +3,9 @@ import { dedupe, rankJobs } from "@/lib/ranking";
 import { setupReport } from "@/lib/config";
 import { adzuna } from "@/lib/sources/adzuna";
 import { jobtech } from "@/lib/sources/jobtech";
+import { greenhouse } from "@/lib/sources/greenhouse";
+import { lever } from "@/lib/sources/lever";
+import { ashby } from "@/lib/sources/ashby";
 import { SourceError, type JobSource } from "@/lib/sources/types";
 
 /**
@@ -19,7 +22,17 @@ import { SourceError, type JobSource } from "@/lib/sources/types";
  * de-duplication makes the overlap harmless.
  */
 
-const ALL_SOURCES: JobSource[] = [jobtech, adzuna];
+const ALL_SOURCES: JobSource[] = [jobtech, adzuna, greenhouse, lever, ashby];
+
+/** Sources that can take part in this particular search. */
+function applicable(params: SearchParams): JobSource[] {
+  return ALL_SOURCES.filter((source) => {
+    if (!source.supports(params.country) || !source.ready()) return false;
+
+    // An employer's own board cannot be searched across companies.
+    return !source.requiresCompany || Boolean(params.company?.trim());
+  });
+}
 
 interface Collected {
   jobs: JobPost[];
@@ -27,10 +40,8 @@ interface Collected {
 }
 
 async function collect(params: SearchParams, signal?: AbortSignal): Promise<Collected> {
-  const usable = ALL_SOURCES.filter((source) => source.supports(params.country) && source.ready());
-
   const perSource = await Promise.all(
-    usable.map(async (source) => {
+    applicable(params).map(async (source) => {
       const pages = Array.from({ length: source.maxPages }, (_, index) => index + 1);
 
       const settled = await Promise.allSettled(
@@ -76,22 +87,25 @@ function describeFailure(rejection: PromiseRejectedResult, source: JobSource): s
  * whole rewrite exists to remove: it looks identical to a market with no jobs
  * in it.
  */
-function blockedReason(country: string): string | null {
-  const covered = ALL_SOURCES.filter((source) => source.supports(country));
+function blockedReason(params: SearchParams): string | null {
+  if (applicable(params).length > 0) return null;
+
+  // The employer boards are always ready, so reaching here with a company named
+  // means the country has no database — worth saying, since the boards alone
+  // would have answered had the country been covered.
+  const covered = ALL_SOURCES.filter(
+    (source) => source.supports(params.country) && !source.requiresCompany,
+  );
 
   if (covered.length === 0) {
-    return `No job database here covers ${country} yet. Adzuna covers 19 countries and Platsbanken covers Sweden; try one of those.`;
+    return `No job database here covers ${params.country} yet. Adzuna covers 19 countries and Platsbanken covers Sweden; try one of those, or name a company to search its own careers board.`;
   }
 
-  if (!covered.some((source) => source.ready())) {
-    return setupReport().jobs.detail;
-  }
-
-  return null;
+  return setupReport().jobs.detail;
 }
 
 export async function search(params: SearchParams, signal?: AbortSignal): Promise<SearchResponse> {
-  const blocked = blockedReason(params.country);
+  const blocked = blockedReason(params);
   if (blocked) {
     return { exact: [], close: [], sources: [], examined: 0, blocked };
   }
@@ -104,9 +118,10 @@ export async function search(params: SearchParams, signal?: AbortSignal): Promis
 }
 
 /** Which sources a country would use — for the setup page, not the search. */
-export function sourcesFor(country: string): Array<{ label: string; ready: boolean }> {
+export function sourcesFor(country: string): Array<{ label: string; ready: boolean; companyOnly: boolean }> {
   return ALL_SOURCES.filter((source) => source.supports(country)).map((source) => ({
     label: source.label,
     ready: source.ready(),
+    companyOnly: Boolean(source.requiresCompany),
   }));
 }

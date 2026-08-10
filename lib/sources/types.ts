@@ -15,6 +15,15 @@ export interface JobSource {
   label: string;
   /** How many pages the orchestrator may request in parallel. */
   maxPages: number;
+  /**
+   * True for sources that can only answer about a named employer.
+   *
+   * An applicant-tracking board is published per company and cannot be
+   * searched across employers, so it contributes to "UX Designer at Booking.com"
+   * and sits out "UX Designer" — a real capability difference rather than a
+   * failure, and one the orchestrator has to know about to report honestly.
+   */
+  requiresCompany?: boolean;
   /** Whether this source covers the country at all. */
   supports(country: string): boolean;
   /** Whether its credentials are present. */

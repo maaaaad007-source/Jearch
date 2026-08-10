@@ -47,8 +47,10 @@ export function ContactPanel({ job, people, loading }: ContactPanelProps) {
       <div className="flex items-start gap-2 border-t border-border bg-muted/30 px-5 py-4 text-sm text-muted-foreground">
         <UserSearch className="mt-0.5 size-4 shrink-0" />
         <span>
-          No named recruiter found at {job.companyName}. The posting link still goes straight to their
-          application page.
+          {/* Trailing dot trimmed: "Booking.com B.V." plus a full stop reads as
+              an ellipsis-by-accident. */}
+          No named recruiter found at {job.companyName.replace(/\.+$/, "")}. The posting link still goes
+          straight to their application page.
         </span>
       </div>
     );

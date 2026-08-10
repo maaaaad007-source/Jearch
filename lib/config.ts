@@ -74,6 +74,15 @@ export const config = {
   get serperEndpoint() {
     return read("SERPER_ENDPOINT");
   },
+  get greenhouseEndpoint() {
+    return read("GREENHOUSE_ENDPOINT");
+  },
+  get leverEndpoint() {
+    return read("LEVER_ENDPOINT");
+  },
+  get ashbyEndpoint() {
+    return read("ASHBY_ENDPOINT");
+  },
 };
 
 export interface DeploymentInfo {

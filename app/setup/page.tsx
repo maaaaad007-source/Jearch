@@ -53,7 +53,7 @@ export default function SetupPage() {
                 {sourcesFor(code).map((source) => (
                   <Badge key={source.label} variant={source.ready ? "outline" : "destructive"}>
                     {source.label}
-                    {source.ready ? "" : " (not connected)"}
+                    {!source.ready ? " (not connected)" : source.companyOnly ? " (with a company)" : ""}
                   </Badge>
                 ))}
                 {sourcesFor(code).length === 0 && (

@@ -87,6 +87,7 @@ export function mapHit(hit: JobTechHit): JobPost | null {
     summary: summarizeResponsibilities(description),
     description,
     source: "Platsbanken",
+    directFromEmployer: false,
   };
 }
 

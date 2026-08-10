@@ -55,7 +55,8 @@ Open `/setup` to see what is actually connected.
 | `SERPER_API_KEY` | Finding who is hiring, via [serper.dev](https://serper.dev) |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Optional: sync saved jobs across devices |
 
-Swedish searches need no credentials at all — Platsbanken is open data.
+Swedish searches need no credentials at all — Platsbanken is open data, and
+the Greenhouse/Lever/Ashby boards need no credential in any country.
 
 Variable names are matched loosely: case and separators are ignored, so
 `adzuna_app_id` and `ADZUNA-APP-ID` both work. A name missing from `/setup`
@@ -78,14 +79,15 @@ did not reach the running build at all.
      title + company + country
                  │
                  ▼
-   ┌─────────────────────────────┐
-   │  every source covering the  │   Adzuna       ·  3 pages ×  50
-   │  country, all pages at once │   Platsbanken  ·  2 pages × 100
-   └─────────────────────────────┘
+   ┌─────────────────────────────┐   Adzuna       ·  3 pages ×  50
+   │  every source that applies, │   Platsbanken  ·  2 pages × 100   (SE)
+   │  all pages at once          │   Greenhouse ┐
+   └─────────────────────────────┘   Lever      ├ the employer's own board,
+                 │                   Ashby      ┘ only with a company named
                  │  up to ~150 postings
                  ▼
       de-duplicate  (employer + title + town)
-                 │
+                 │   the employer's own listing wins over an aggregator's copy
                  ▼
       rank ──►  exact matches  ─┐
                 close matches  ─┴─►  two labelled tiers on screen
@@ -93,6 +95,26 @@ did not reach the running build at all.
                  ▼
       look up people for the top employers  (one Serper search each)
 ```
+
+### Sources
+
+| Source | What it is | Scope |
+| --- | --- | --- |
+| **Adzuna** | Aggregated jobs database | 19 countries |
+| **Platsbanken** | Swedish public employment service | Sweden, no credential |
+| **Greenhouse**, **Lever**, **Ashby** | The employer's own careers board, free unauthenticated JSON | Any country — **only when a company is named**, since a board is addressed per employer rather than searched |
+
+The applicant-tracking boards are the primary record: fresher than an
+aggregator's copy, with the full description and a link straight to the real
+application page. They are addressed by a board token the company chose, which
+has to be guessed from the name typed — a few candidates (`bookingcom`,
+`booking-com`, `booking`) are tried in parallel and the first board that exists
+wins. Each board is worldwide, so postings are filtered to the searched country
+by their location text; a location that cannot be placed is kept rather than
+dropped.
+
+**Not** included: LinkedIn (no public jobs API, and scraping breaches their
+terms) and Indeed (public jobs API closed to new applicants).
 
 Jobs paint as soon as the databases answer; contact panels fill in afterwards,
 so the page is useful before the slower half finishes.
@@ -112,6 +134,8 @@ A source that fails is named on screen rather than quietly skipped.
 - **a company filter really excludes.** Matching is on name *tokens*, not
   substrings — `"ING"` is inside `"Booking"`, and substring matching once put
   ING's postings in a Booking.com search
+- de-duplication keeps seniority: "Senior UX Designer" is not a duplicate of
+  "UX Designer" at the same employer
 
 Those rules are pinned by `lib/ranking.test.ts`.
 

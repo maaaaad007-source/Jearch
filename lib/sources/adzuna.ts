@@ -78,6 +78,7 @@ export function mapResult(result: AdzunaResult, country: string): JobPost | null
     summary: summarizeResponsibilities(description),
     description,
     source: "Adzuna",
+    directFromEmployer: false,
   };
 }
 

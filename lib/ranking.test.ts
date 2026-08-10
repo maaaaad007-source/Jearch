@@ -26,6 +26,7 @@ function job(overrides: Partial<JobPost> = {}): JobPost {
     summary: "",
     description: null,
     source: "Adzuna",
+    directFromEmployer: false,
     ...overrides,
   };
 }
@@ -84,4 +85,14 @@ test("the same posting from two sources collapses to one", () => {
 
   assert.equal(unique.length, 1);
   assert.equal(unique[0].description, "a much longer description wins");
+});
+
+test("the employer's own listing beats an aggregator's copy", () => {
+  const unique = dedupe([
+    job({ id: "adzuna:1", description: "a long aggregated copy of the posting", source: "Adzuna" }),
+    job({ id: "greenhouse:1", description: "shorter", source: "Greenhouse", directFromEmployer: true }),
+  ]);
+
+  assert.equal(unique.length, 1);
+  assert.equal(unique[0].source, "Greenhouse", "the primary record wins even when its text is shorter");
 });

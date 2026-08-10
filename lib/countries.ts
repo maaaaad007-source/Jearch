@@ -222,4 +222,68 @@ export function majorCities(code: string): string[] {
   return MAJOR_CITIES[code.toUpperCase()] ?? [];
 }
 
+/**
+ * Country names that are also common place names inside another country, so
+ * seeing them in a location string proves nothing. "Atlanta, Georgia" is in
+ * the United States.
+ */
+const AMBIGUOUS_COUNTRY_NAMES = new Set(["georgia", "jordan", "chad"]);
+
+/** US state abbreviations, which is how American job boards write locations. */
+const US_STATES = new Set([
+  "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il", "in", "ia",
+  "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt", "ne", "nv", "nh", "nj",
+  "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri", "sc", "sd", "tn", "tx", "ut", "vt",
+  "va", "wa", "wv", "wi", "wy", "dc",
+]);
+
+let cityIndex: Map<string, string> | null = null;
+
+function citiesByName(): Map<string, string> {
+  if (cityIndex) return cityIndex;
+
+  cityIndex = new Map();
+  for (const [code, cities] of Object.entries(MAJOR_CITIES)) {
+    for (const city of cities) cityIndex.set(normalize(city), code);
+  }
+  return cityIndex;
+}
+
+/**
+ * Which country a free-text location refers to, if it can be told.
+ *
+ * Applicant-tracking boards publish one worldwide list per employer with
+ * locations as prose — "Amsterdam", "London, UK", "Remote - US" — so this is
+ * how a search for the Netherlands avoids being handed the New York opening.
+ *
+ * Returns null when the text is not conclusive, which callers should treat as
+ * "keep it": dropping a posting we simply could not place loses real results,
+ * while only the confident mismatches are worth excluding.
+ */
+export function locationCountry(location: string | null | undefined): string | null {
+  if (!location) return null;
+
+  const text = normalize(location);
+
+  // Cities first: "Mexico City, Mexico" is a city hit, and checking country
+  // names first would make every "<City>, <Country>" string ambiguous.
+  for (const [city, code] of citiesByName()) {
+    if (text.includes(city)) return code;
+  }
+
+  const stateSuffix = text.match(/[,\s]([a-z]{2})\b\s*$/);
+  if (stateSuffix && US_STATES.has(stateSuffix[1])) return "US";
+
+  if (/\b(usa|united states|u\.s\.)\b/.test(text)) return "US";
+  if (/\b(uk|united kingdom)\b/.test(text)) return "GB";
+
+  for (const country of COUNTRIES) {
+    const name = normalize(country.name);
+    if (AMBIGUOUS_COUNTRY_NAMES.has(name)) continue;
+    if (text.includes(name)) return country.code;
+  }
+
+  return null;
+}
+
 export const DEFAULT_COUNTRY = "US";

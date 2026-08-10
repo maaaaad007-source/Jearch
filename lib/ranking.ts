@@ -208,6 +208,23 @@ export function rankJobs(
  * Aggregators repost, and the same ad reaches Adzuna under several ids, so
  * identity is the employer plus the title plus the town rather than any id.
  */
+/**
+ * Which copy of the same opening to keep.
+ *
+ * The employer's own board wins over an aggregator's copy of it even when the
+ * aggregator's text is longer: it is the primary record, so its link goes
+ * straight to the real application page and its details are what the employer
+ * actually published. Between two copies of equal standing, the fuller
+ * description gives the card more to show.
+ */
+function preferredCopy(a: JobPost, b: JobPost): JobPost {
+  if (a.directFromEmployer !== b.directFromEmployer) {
+    return a.directFromEmployer ? a : b;
+  }
+
+  return (a.description?.length ?? 0) > (b.description?.length ?? 0) ? a : b;
+}
+
 export function dedupe(jobs: JobPost[]): JobPost[] {
   const seen = new Map<string, JobPost>();
 
@@ -222,8 +239,7 @@ export function dedupe(jobs: JobPost[]): JobPost[] {
     ].join("|");
 
     const existing = seen.get(fingerprint);
-    // Keep whichever copy carries more for the card to show.
-    if (!existing || (job.description?.length ?? 0) > (existing.description?.length ?? 0)) {
+    if (!existing || preferredCopy(job, existing) === job) {
       seen.set(fingerprint, job);
     }
   }
