@@ -1,15 +1,19 @@
-import type { Person } from "@/types";
+import type { ContactKind, Person } from "@/types";
 import { config } from "@/lib/config";
-import { sameCompany, slugifyCompany } from "@/lib/ranking";
+import { sameCompany } from "@/lib/ranking";
 
 /**
- * Finding the person to contact, via Google (Serper) over LinkedIn.
+ * Finding the people to contact, via Google (Serper) over LinkedIn.
  *
- * The deliberate change from the previous design: a LinkedIn profile is a fact
- * — it was found, it exists, you can open it — while an email assembled from
- * "first.last@domain" is a guess that might bounce or reach a stranger.
- * Presenting the two with equal confidence was a mistake, so the profile leads
- * and the address is flagged as constructed wherever it appears.
+ * A LinkedIn profile is a fact — it was found, it exists, you can open it.
+ * Earlier versions also assembled a "first.last@domain" address for each
+ * person; those were wrong often enough to do more harm than good, so they are
+ * gone and the profile is the one way in.
+ *
+ * Two searches per employer: one for the people who run hiring (recruiters,
+ * talent acquisition, and for internships the early-careers team), one for the
+ * people the hire would work for (a manager or lead in the posting's field).
+ * The second is often the better contact and was previously never looked for.
  *
  * Serper is used rather than Apollo or Hunter because it costs a fraction as
  * much and works from a company *name*, so it answers for the small employers
@@ -80,29 +84,6 @@ export function parseProfile(rawTitle: string): ParsedProfile | null {
   return { name, title: parts[1] ?? null, companyName: parts[2] ?? null };
 }
 
-/** Surname particles that belong to the surname rather than being middle names. */
-const PARTICLES = new Set(["de", "van", "von", "der", "den", "la", "le", "du", "di", "da", "dos", "del", "bin"]);
-
-export function patternEmail(name: string, domain: string | null): string | null {
-  if (!domain) return null;
-
-  const parts = name
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z\s]/g, "")
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (parts.length < 2) return null;
-
-  const surname = PARTICLES.has(parts[parts.length - 2])
-    ? `${parts[parts.length - 2]}${parts[parts.length - 1]}`
-    : parts[parts.length - 1];
-
-  return `${parts[0]}.${surname}@${domain}`;
-}
-
 /**
  * A profile that names a different employer is the wrong person.
  *
@@ -116,26 +97,78 @@ function companyAgrees(profileCompany: string | null, searched: string): boolean
   return sameCompany(profileCompany, searched);
 }
 
-/** Whose job it is to be contacted about a role, most relevant first. */
-const TITLE_WEIGHTS: Array<[RegExp, number]> = [
-  [/\b(talent acquisition|technical recruiter|recruiter|recruitment)\b/i, 100],
-  [/\b(talent|hiring manager|people (partner|operations|ops))\b/i, 90],
-  [/\b(head of (talent|people|hr)|hr (manager|director|lead))\b/i, 80],
-  [/\b(head of|director|vp|vice president|chief)\b/i, 55],
-  [/\b(manager|lead)\b/i, 40],
-  [/\b(founder|co-?founder|ceo)\b/i, 35],
-];
+/** Who runs internship and graduate hiring — often a separate team from the recruiters. */
+const EARLY_CAREERS = /\b(university|campus|early[- ]careers?|emerging talent|graduate|intern(ship)?s?|student|apprentice(ship)?s?)\b/i;
+const RECRUITING = /\b(talent acquisition|technical recruiter|recruiter|recruitment|recruiting|sourcer|talent (partner|lead|manager|specialist)|people partner|hr business partner|human resources)\b/i;
+const HIRING_MANAGER = /\bhiring manager\b/i;
+const SENIOR = /\b(head|director|manager|lead|principal|vp|vice president|chief|supervisor|team lead)\b/i;
+const LEADERSHIP = /\b(founder|co-?founder|ceo|cto|coo|chief|managing director|head of|vp|vice president|director|owner)\b/i;
 
-function scoreTitle(title: string | null): number {
-  if (!title) return 0;
+/** Words in a role that say nothing about its field. */
+const NOT_A_FIELD = new Set([
+  "senior", "junior", "sr", "jr", "lead", "principal", "staff", "mid", "level", "i", "ii", "iii",
+  "intern", "interns", "internship", "trainee", "graduate", "apprentice", "working", "student",
+  "werkstudent", "stagiair", "praktikant", "summer", "thesis", "and", "or", "the", "of", "for", "a",
+  "an", "m", "f", "d", "x", "w", "in", "at", "to",
+]);
 
-  for (const [pattern, weight] of TITLE_WEIGHTS) {
-    if (pattern.test(title)) return weight;
-  }
-  return 10;
+/**
+ * The field a role belongs to, as search words: "UX Design Intern" → "UX Design".
+ * Capped at two words — "Senior Backend Software Engineer" as an exact phrase
+ * finds no one, "Backend Software" or "Software Engineer" still does.
+ */
+export function fieldOf(role: string | null): string[] {
+  if (!role) return [];
+
+  const words = role
+    .replace(/\(.*?\)/g, " ")
+    .split(/[^A-Za-zÀ-ÿ0-9+#]+/)
+    .filter((word) => word.length >= 2 && !NOT_A_FIELD.has(word.toLowerCase()));
+
+  return words.slice(0, 2);
 }
 
-function mapProfile(result: SerperResult, companyName: string, domain: string | null): Person | null {
+function stem(word: string): string {
+  return word.toLowerCase().replace(/(ers?|ing|ors?|ists?|ment)$/, "");
+}
+
+/** Does this headline sit in the same field as the role? "Design Manager" for a UX Design Intern. */
+function inField(title: string, field: string[]): boolean {
+  const lower = title.toLowerCase();
+  return field.some((word) => {
+    const root = stem(word);
+    return root.length >= 3 && lower.includes(root);
+  });
+}
+
+/** Why this person is worth contacting, from their headline alone. */
+export function classify(title: string | null, field: string[]): ContactKind | null {
+  if (!title) return null;
+
+  if (EARLY_CAREERS.test(title) && (RECRUITING.test(title) || /\b(talent|program|programme|hiring)\b/i.test(title))) {
+    return "Early careers";
+  }
+  if (RECRUITING.test(title)) return "Recruiting";
+  if (HIRING_MANAGER.test(title)) return "Hiring team";
+  if (SENIOR.test(title) && inField(title, field)) return "Hiring team";
+  if (LEADERSHIP.test(title)) return "Leadership";
+  return null;
+}
+
+/** Most useful first. The early-careers team outranks everyone for an internship, and only then. */
+function score(person: Person, field: string[], internship: boolean): number {
+  const base = {
+    "Early careers": internship ? 110 : 70,
+    Recruiting: 100,
+    "Hiring team": 95,
+    Leadership: 50,
+  } as const;
+
+  if (person.kind) return base[person.kind];
+  return person.title && inField(person.title, field) ? 30 : 10;
+}
+
+function mapProfile(result: SerperResult, companyName: string, field: string[]): Person | null {
   const link = result.link ?? "";
   if (!/linkedin\.com\/in\//i.test(link)) return null;
 
@@ -143,86 +176,72 @@ function mapProfile(result: SerperResult, companyName: string, domain: string | 
   if (!parsed) return null;
   if (!companyAgrees(parsed.companyName, companyName)) return null;
 
-  const email = patternEmail(parsed.name, domain);
-
   return {
     id: `serper:${link}`,
     name: parsed.name,
     title: parsed.title,
     linkedinUrl: link.split("?")[0],
-    email,
-    // Serper is a search engine; it cannot verify an address. Anything here was
-    // constructed from a naming convention and the UI must say so.
-    emailIsPattern: Boolean(email),
+    kind: classify(parsed.title, field),
     companyName: parsed.companyName ?? companyName,
     source: "LinkedIn via Serper",
   };
 }
 
-/** Hosts that are never a company's own website. */
-const NOT_COMPANY_SITES = [
-  "linkedin.com", "facebook.com", "twitter.com", "x.com", "instagram.com", "youtube.com",
-  "wikipedia.org", "glassdoor.com", "indeed.com", "crunchbase.com", "bloomberg.com",
-  "github.com", "medium.com", "reddit.com", "zoominfo.com", "greenhouse.io", "lever.co",
-  "workable.com", "teamtailor.com", "smartrecruiters.com", "myworkdayjobs.com", "ashbyhq.com",
-];
-
-/**
- * Find the employer's own website, so an address can be constructed at all.
- *
- * Applicant-tracking hosts are excluded explicitly: a posting hosted on
- * teamtailor.com is not evidence that the recruiter's email ends in
- * @teamtailor.com, and that exact mistake reached the screen once.
- */
-async function resolveDomain(companyName: string, signal?: AbortSignal): Promise<string | null> {
-  const results = await serper(`${companyName} official website`, 5, signal).catch(() => []);
-
-  for (const result of results) {
-    if (!result.link) continue;
-
-    try {
-      const host = new URL(result.link).hostname.replace(/^www\./, "");
-      if (NOT_COMPANY_SITES.some((bad) => host === bad || host.endsWith(`.${bad}`))) continue;
-
-      // A plausible company domain shares a stem with the company name.
-      const stem = slugifyCompany(companyName).slice(0, 6);
-      if (stem.length >= 3 && !host.replace(/[^a-z0-9]/g, "").includes(stem)) continue;
-
-      return host;
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
+/** How many people come back per employer — the card shows the first and folds the rest. */
+const PEOPLE_PER_COMPANY = 8;
 
 export interface CompanyQuery {
   companyName: string;
-  /** Known from the posting, when the source published one. */
-  domain: string | null;
+  /** The role being hired for, so the hiring team can be looked for by field. */
+  role: string | null;
+  /** True when any of this employer's results is an internship. */
+  internship: boolean;
+}
+
+function recruitingQuery(query: CompanyQuery): string {
+  const titles = [
+    "recruiter",
+    '"talent acquisition"',
+    '"hiring manager"',
+    '"talent partner"',
+    '"people partner"',
+    ...(query.internship
+      ? ['"university recruiter"', '"campus recruiter"', '"early careers"', '"graduate recruitment"', '"emerging talent"']
+      : []),
+  ];
+
+  return `${query.companyName} (${titles.join(" OR ")}) site:linkedin.com/in`;
+}
+
+function teamQuery(query: CompanyQuery, field: string[]): string | null {
+  if (field.length === 0) return null;
+
+  return `${query.companyName} "${field.join(" ")}" (manager OR lead OR "head of" OR director) site:linkedin.com/in`;
 }
 
 async function findForCompany(query: CompanyQuery, signal?: AbortSignal): Promise<Person[]> {
-  const domain = query.domain ?? (await resolveDomain(query.companyName, signal));
+  const field = fieldOf(query.role);
+  const team = teamQuery(query, field);
 
-  const results = await serper(
-    `${query.companyName} recruiter OR "talent acquisition" OR "hiring manager" site:linkedin.com/in`,
-    10,
-    signal,
-  );
+  // The recruiting search is the one that must work; the team search only adds
+  // to it, so its failure is not worth losing the recruiters over.
+  const [recruiting, hiringTeam] = await Promise.all([
+    serper(recruitingQuery(query), 10, signal),
+    team ? serper(team, 10, signal).catch(() => []) : Promise.resolve([]),
+  ]);
 
-  const people = results
-    .map((result) => mapProfile(result, query.companyName, domain))
-    .filter((person): person is Person => person !== null);
+  const byProfile = new Map<string, Person>();
+  for (const result of [...recruiting, ...hiringTeam]) {
+    const person = mapProfile(result, query.companyName, field);
+    if (person?.linkedinUrl && !byProfile.has(person.linkedinUrl)) byProfile.set(person.linkedinUrl, person);
+  }
 
-  return people.sort((a, b) => {
-    const byTitle = scoreTitle(b.title) - scoreTitle(a.title);
-    if (byTitle !== 0) return byTitle;
-
-    // A profile with a reachable address is more use than one without.
-    return Number(Boolean(b.email)) - Number(Boolean(a.email));
-  });
+  return [...byProfile.values()]
+    .map((person, order) => ({ person, order, score: score(person, field, query.internship) }))
+    // Search order breaks ties: Google's ranking is a fair signal of relevance.
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .slice(0, PEOPLE_PER_COMPANY)
+    .map(({ person }) => person);
 }
 
 /**

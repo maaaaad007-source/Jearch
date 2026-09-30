@@ -44,7 +44,6 @@ export function mapJob(job: AshbyJob, company: string): JobPost | null {
     id: `ashby:${job.id ?? job.jobUrl ?? title}`,
     title,
     companyName: company,
-    companyDomain: null,
     city,
     region,
     workType: job.isRemote ? "Remote" : workTypeFrom(location, description ?? ""),

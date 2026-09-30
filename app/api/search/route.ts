@@ -17,11 +17,15 @@ const schema = z
       .trim()
       .length(2, "Country must be an ISO 3166-1 alpha-2 code")
       .refine(isValidCountryCode, "Unsupported country code"),
+    type: z.enum(["all", "jobs", "internships"]).catch("all"),
   })
   // Either field alone is a valid search — title only, company only, or both.
-  .refine((value) => value.designation.length >= 2 || value.company.length >= 2, {
-    message: "Enter a job title or a company name (at least 2 characters)",
-  });
+  // "Internships only" is specific enough to stand on its own: every
+  // internship in the country is a reasonable thing to ask for.
+  .refine(
+    (value) => value.designation.length >= 2 || value.company.length >= 2 || value.type === "internships",
+    { message: "Enter a job title or a company name (at least 2 characters)" },
+  );
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -30,6 +34,7 @@ export async function GET(request: Request) {
     designation: searchParams.get("designation") ?? "",
     company: searchParams.get("company") ?? "",
     country: searchParams.get("country") ?? "",
+    type: searchParams.get("type") ?? "all",
   });
 
   if (!parsed.success) {
@@ -42,6 +47,7 @@ export async function GET(request: Request) {
         designations: parseRoles(parsed.data.designation),
         country: parsed.data.country,
         company: parsed.data.company,
+        jobType: parsed.data.type,
       },
       request.signal,
     );

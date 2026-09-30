@@ -7,7 +7,6 @@ import {
   Building2,
   CloudOff,
   Download,
-  Mail,
   MapPin,
   Trash2,
 } from "lucide-react";
@@ -15,9 +14,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CopyButton } from "@/components/copy-button";
 import { LinkedInIcon } from "@/components/icons/linkedin";
-import { MailDraftDialog } from "@/components/mail-draft-dialog";
+import { MessageDraftDialog } from "@/components/message-draft-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { formatSalary, relativeTime } from "@/lib/utils";
 import { useSavedStore } from "@/store/use-saved-store";
@@ -34,9 +32,8 @@ function toCsv(opportunities: SavedOpportunity[]): string {
     "Apply URL",
     "Contact name",
     "Contact title",
+    "Contact type",
     "LinkedIn",
-    "Email",
-    "Email confidence",
     "Notes",
   ];
 
@@ -53,9 +50,8 @@ function toCsv(opportunities: SavedOpportunity[]): string {
       item.job.applyUrl ?? "",
       item.person?.name ?? "",
       item.person?.title ?? "",
+      item.person?.kind ?? "",
       item.person?.linkedinUrl ?? "",
-      item.person?.email ?? "",
-      item.person?.emailIsPattern ? "pattern guess" : item.person?.email ? "found" : "",
       item.notes ?? "",
     ]
       .map(escape)
@@ -187,6 +183,7 @@ function SavedCard({
               <p className="truncate text-sm font-medium">{item.person.name}</p>
               <p className="truncate text-xs text-muted-foreground">
                 {item.person.title ?? "Title unavailable"}
+                {item.person.kind && ` · ${item.person.kind}`}
               </p>
             </div>
 
@@ -206,21 +203,9 @@ function SavedCard({
             </div>
           </div>
 
-          {item.person.email && (
-            <div className="flex items-center gap-2 text-xs">
-              <Mail className="size-3.5 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{item.person.email}</span>
-              <CopyButton value={item.person.email} label="Copy email" />
-            </div>
-          )}
-
-          {item.person.emailIsPattern && item.person.email && (
-            <p className="text-xs text-[var(--warning)]">
-              Address was built from a naming pattern, not confirmed.
-            </p>
-          )}
-
-          <MailDraftDialog job={item.job} person={item.person} />
+          <div>
+            <MessageDraftDialog job={item.job} person={item.person} />
+          </div>
         </div>
       ) : (
         <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">

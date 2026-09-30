@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Bookmark, BookmarkCheck, Building2, ChevronDown, ExternalLink, MapPin, Wallet } from "lucide-react";
+import { Bookmark, BookmarkCheck, Building2, ChevronDown, ExternalLink, GraduationCap, MapPin, Wallet } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ContactPanel } from "@/components/contact-panel";
+import { isInternship } from "@/lib/ranking";
 import { cn, formatSalary, isFresh, relativeTime } from "@/lib/utils";
 import { stripHtml } from "@/lib/text";
 import { useSavedStore } from "@/store/use-saved-store";
@@ -43,6 +44,7 @@ export function JobCard({ job, matchedRole, people, loadingPeople }: JobCardProp
   const location = [job.city, job.region].filter(Boolean).join(", ");
   const description = job.description ? stripHtml(job.description) : null;
   const best = people?.[0] ?? null;
+  const internship = isInternship(job.title);
 
   return (
     <Card className="animate-in-up flex flex-col overflow-hidden transition-shadow hover:shadow-md">
@@ -69,6 +71,13 @@ export function JobCard({ job, matchedRole, people, loadingPeople }: JobCardProp
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          {internship && (
+            <Badge className="gap-1 border-transparent bg-[color-mix(in_oklch,var(--success)_18%,transparent)] font-medium text-[var(--success)]">
+              <GraduationCap className="size-3" />
+              Internship
+            </Badge>
+          )}
+
           {matchedRole && (
             <Badge className="border-transparent bg-primary/15 font-medium text-primary">{matchedRole}</Badge>
           )}

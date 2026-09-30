@@ -13,6 +13,14 @@ import { describeHttpFailure, SourceError, type JobSource } from "@/lib/sources/
  */
 
 const DEFAULT_BASE = "https://api.adzuna.com/v1/api/jobs";
+
+/**
+ * Any one of these in the ad makes it a candidate internship; ranking then
+ * checks the title. Several languages at once, because Adzuna's Dutch, German
+ * and French markets advertise internships in their own words.
+ */
+const INTERNSHIP_TERMS =
+  "intern internship trainee traineeship apprentice apprenticeship graduate werkstudent stagiair stage praktikant praktikum alternance";
 const PAGE_SIZE = 50;
 
 /** Adzuna's own lowercase country codes. */
@@ -57,9 +65,6 @@ export function mapResult(result: AdzunaResult, country: string): JobPost | null
     id: `adzuna:${result.id ?? result.redirect_url ?? title}`,
     title,
     companyName: result.company?.display_name?.trim() || "Unknown company",
-    // Adzuna does not publish the employer's website; people lookup works from
-    // the name alone, so this stays null rather than being guessed at.
-    companyDomain: null,
     // `area` runs country-first, so the last entry is the most specific place.
     city: area.length > 1 ? area[area.length - 1] : (result.location?.display_name ?? null),
     region: area.length > 2 ? area[1] : null,
@@ -94,6 +99,7 @@ async function request(params: SearchParams, page: number, useCompanyFilter: boo
   url.searchParams.set("max_days_old", "90");
 
   if (params.designation) url.searchParams.set("what", params.designation);
+  if (params.internship) url.searchParams.set("what_or", INTERNSHIP_TERMS);
   if (useCompanyFilter && params.company) url.searchParams.set("company", params.company);
 
   const response = await fetch(url, { signal, next: { revalidate: 300 } });

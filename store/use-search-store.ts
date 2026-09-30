@@ -2,7 +2,8 @@
 
 import { create } from "zustand";
 
-import type { PeopleResponse, Person, RankedJob, SearchResponse, SourceReport } from "@/types";
+import { isInternship } from "@/lib/ranking";
+import type { JobType, PeopleResponse, Person, RankedJob, SearchResponse, SourceReport } from "@/types";
 
 /**
  * Search state, in two phases.
@@ -23,6 +24,7 @@ interface SearchState {
   designation: string;
   company: string;
   country: string;
+  jobType: JobType;
 
   status: Status;
   error: string | null;
@@ -31,14 +33,14 @@ interface SearchState {
   close: RankedJob[];
   elsewhere: RankedJob[];
   employersFound: string[];
-  excluded: { company: number; stale: number; title: number };
+  excluded: { company: number; stale: number; title: number; type: number };
   sources: SourceReport[];
   examined: number;
   /** The roles the results actually answer, after parsing and capping. */
   roles: string[];
   blocked: string | null;
   /** The query the visible results answer, so headings cannot drift. */
-  searched: { designation: string; company: string; country: string } | null;
+  searched: { designation: string; company: string; country: string; jobType: JobType } | null;
 
   peopleByCompany: Record<string, Person[]>;
   peopleStatus: PeopleStatus;
@@ -47,6 +49,7 @@ interface SearchState {
   setDesignation: (value: string) => void;
   setCompany: (value: string) => void;
   setCountry: (value: string) => void;
+  setJobType: (value: JobType) => void;
   search: () => Promise<void>;
   /** Phase two of `search`; not meant to be called on its own. */
   lookUpPeople: (controller: AbortController) => Promise<void>;
@@ -58,6 +61,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   designation: "",
   company: "",
   country: "NL",
+  jobType: "all",
 
   status: "idle",
   error: null,
@@ -66,7 +70,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   close: [],
   elsewhere: [],
   employersFound: [],
-  excluded: { company: 0, stale: 0, title: 0 },
+  excluded: { company: 0, stale: 0, title: 0, type: 0 },
   sources: [],
   examined: 0,
   roles: [],
@@ -80,11 +84,12 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   setDesignation: (value) => set({ designation: value }),
   setCompany: (value) => set({ company: value }),
   setCountry: (value) => set({ country: value }),
+  setJobType: (value) => set({ jobType: value }),
 
   search: async () => {
-    const { designation, company, country } = get();
+    const { designation, company, country, jobType } = get();
 
-    if (designation.trim().length < 2 && company.trim().length < 2) {
+    if (designation.trim().length < 2 && company.trim().length < 2 && jobType !== "internships") {
       set({ status: "error", error: "Enter a job title or a company name." });
       return;
     }
@@ -101,7 +106,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       close: [],
       elsewhere: [],
       employersFound: [],
-      excluded: { company: 0, stale: 0, title: 0 },
+      excluded: { company: 0, stale: 0, title: 0, type: 0 },
       sources: [],
       examined: 0,
       roles: [],
@@ -109,13 +114,14 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       peopleByCompany: {},
       peopleStatus: "idle",
       peopleError: null,
-      searched: { designation: designation.trim(), company: company.trim(), country },
+      searched: { designation: designation.trim(), company: company.trim(), country, jobType },
     });
 
     const query = new URLSearchParams({
       designation: designation.trim(),
       company: company.trim(),
       country,
+      type: jobType,
     });
 
     try {
@@ -130,7 +136,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         close: payload.close,
         elsewhere: payload.elsewhere ?? [],
         employersFound: payload.employersFound ?? [],
-        excluded: payload.excluded ?? { company: 0, stale: 0, title: 0 },
+        excluded: payload.excluded ?? { company: 0, stale: 0, title: 0, type: 0 },
         sources: payload.sources,
         examined: payload.examined,
         roles: payload.roles ?? [],
@@ -155,15 +161,28 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     // last but still included: they are the only cards on screen when a
     // company search comes up empty, and a card without a contact is half a
     // card.
-    const companies: Array<{ companyName: string; domain: string | null }> = [];
-    const seen = new Set<string>();
+    const companies: Array<{ companyName: string; role: string | null; internship: boolean }> = [];
+    const byName = new Map<string, (typeof companies)[number]>();
+    const { roles } = get();
 
-    for (const { job } of [...exact, ...close, ...elsewhere]) {
-      if (companies.length >= PEOPLE_BUDGET) break;
-      if (job.companyName === "Unknown company" || seen.has(job.companyName)) continue;
+    for (const { job, matchedRole } of [...exact, ...close, ...elsewhere]) {
+      if (job.companyName === "Unknown company") continue;
 
-      seen.add(job.companyName);
-      companies.push({ companyName: job.companyName, domain: job.companyDomain });
+      const internship = isInternship(job.title);
+      const known = byName.get(job.companyName);
+      if (known) {
+        // One internship among an employer's results is enough to look for
+        // the early-careers team there too.
+        known.internship ||= internship;
+        continue;
+      }
+      if (companies.length >= PEOPLE_BUDGET) continue;
+
+      // The role the hiring team is looked up by: what was searched when that
+      // is known, the posting's own title for a company-only search.
+      const entry = { companyName: job.companyName, role: matchedRole ?? roles[0] ?? job.title, internship };
+      byName.set(job.companyName, entry);
+      companies.push(entry);
     }
 
     if (companies.length === 0) {

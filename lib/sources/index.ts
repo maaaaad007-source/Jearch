@@ -48,14 +48,32 @@ async function collect(query: SearchQuery, signal?: AbortSignal): Promise<Collec
       // role; an employer's board returns its whole list either way, so asking
       // it repeatedly would just be the same request several times over.
       const roles = source.queriedPerRole ? query.designations : query.designations.slice(0, 1);
-      const asked: SearchParams[] = (roles.length > 0 ? roles : [""]).map((designation) => ({
-        designation,
-        country: query.country,
-        company: query.company,
-      }));
+      const asks = (roles.length > 0 ? roles : [""]).flatMap((designation) => {
+        const base: SearchParams = { designation, country: query.country, company: query.company };
+
+        // A board lists internships alongside everything else, so there is
+        // nothing extra to ask it; ranking sorts them out.
+        if (!source.queriedPerRole) return pages.map((page) => ({ params: base, page }));
+
+        const regular = pages.map((page) => ({ params: base, page }));
+        const internships = pages.map((page) => ({ params: { ...base, internship: true }, page }));
+
+        // Internships are a small share of any market, so an ordinary query
+        // buries them past the pages fetched. They get a query of their own:
+        // every page when they are all that was asked for, one page alongside
+        // the regular results otherwise.
+        switch (query.jobType ?? "all") {
+          case "internships":
+            return internships;
+          case "jobs":
+            return regular;
+          default:
+            return [...regular, ...internships.slice(0, 1)];
+        }
+      });
 
       const settled = await Promise.allSettled(
-        asked.flatMap((params) => pages.map((page) => source.fetchPage(params, page, signal))),
+        asks.map(({ params, page }) => source.fetchPage(params, page, signal)),
       );
 
       const jobs = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
@@ -122,7 +140,7 @@ export async function search(query: SearchQuery, signal?: AbortSignal): Promise<
       close: [],
       elsewhere: [],
       employersFound: [],
-      excluded: { company: 0, stale: 0, title: 0 },
+      excluded: { company: 0, stale: 0, title: 0, type: 0 },
       sources: [],
       examined: 0,
       roles: query.designations,

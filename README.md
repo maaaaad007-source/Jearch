@@ -1,8 +1,9 @@
 # Jearch — direct-contact job finder
 
-Search live job postings by title, company and country, and get the person
-hiring for each one: their role, their LinkedIn profile, and an email address
-where one can be worked out.
+Search live job postings and internships by title, company and country, and get
+the people hiring for each one: the recruiters, the early-careers team for an
+internship, and the managers in the posting's field, each with their LinkedIn
+profile.
 
 Next.js 16 (App Router) · TypeScript · Tailwind v4 · Zustand.
 
@@ -18,7 +19,7 @@ and the rebuild came directly out of what that cost:
 | A search returned 2 results where LinkedIn showed 98 | Google indexes *pages*, not jobs — and only page one was read | Jobs come from job **databases**, several pages fetched in parallel |
 | "UX Writer" answered a search for "UX Designer" | Any shared word counted as a match | Titles are **scored**; adjacent roles land in a separate, labelled tier |
 | Filtering harder produced "No postings matched" | A boolean gate discards near misses silently | Nothing relevant is thrown away — close matches get their own heading |
-| A guessed email was shown like a confirmed one | Both rendered identically | The LinkedIn profile leads; a constructed address is labelled as constructed |
+| Constructed emails were mostly wrong | `first.last@domain` is a guess | No emails at all — the LinkedIn profile is the way in |
 | Hours lost debugging a search that was never sent | An unset key looked exactly like an empty result | Nothing degrades silently — see `/setup` |
 
 The last one is worth stating plainly: **there is no demo mode.** If a source
@@ -151,14 +152,36 @@ a realistic ceiling, not an arbitrary one.
 
 Those rules are pinned by `lib/ranking.test.ts`.
 
-### What is and is not claimed about a contact
+### Internships
 
-A LinkedIn profile was genuinely found — it exists, you can open it. An email
-built from `first.last@domain` is a guess. The UI never renders them alike:
-the profile leads every card and a constructed address carries a warning.
-Applicant-tracking hosts are excluded when resolving a company domain, because
-a posting hosted on `teamtailor.com` is not evidence that anyone's address
-ends in `@teamtailor.com`.
+Every search includes internships unless *Jobs only* is chosen; *Internships
+only* narrows to them and needs no job title. "Internship" means all of its
+forms — intern, traineeship, working student / Werkstudent, graduate
+programme, apprenticeship, summer analyst, co-op, thesis project, and the
+Dutch, French, Swedish, Spanish, Italian, Portuguese and Polish words for
+them. Detection is on the title only (`isInternship` in `lib/ranking.ts`).
+
+Internships are a small share of any market, so the job databases get a
+dedicated internship query alongside the regular one. An internship is titled
+by its field rather than the job ("UX Design Intern", not "UX Designer
+Intern"), so for internships only, a search for *UX Designer* matches *UX
+Design*.
+
+### Who is shown as a contact
+
+Two LinkedIn searches per employer, via Serper:
+
+1. **Recruiting** — recruiters, talent acquisition, people partners and hiring
+   managers; for an employer with internships also university, campus,
+   early-careers and graduate recruiters.
+2. **Hiring team** — managers, leads, heads and directors in the posting's
+   field ("Design Manager" for a UX Design Intern).
+
+Each person is labelled *Recruiting*, *Early careers*, *Hiring team* or
+*Leadership*, and ordered in that spirit — the early-careers team first for an
+internship. There are no email addresses: ones built from `first.last@domain`
+were wrong too often. A LinkedIn profile was genuinely found, and the draft
+message is written to be pasted there.
 
 There is no LinkedIn scraping here. LinkedIn publishes no jobs API and
 scraping it breaches their terms; postings come from job databases instead.

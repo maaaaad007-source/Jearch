@@ -10,6 +10,17 @@ import { Label } from "@/components/ui/label";
 import { suggestTitles } from "@/lib/job-titles";
 import { cn } from "@/lib/utils";
 import { useSearchStore } from "@/store/use-search-store";
+import type { JobType } from "@/types";
+
+const JOB_TYPES: Array<{ value: JobType; label: string; hint: string }> = [
+  { value: "all", label: "Jobs & internships", hint: "Everything, internships included" },
+  { value: "jobs", label: "Jobs only", hint: "Leave internships out" },
+  {
+    value: "internships",
+    label: "Internships only",
+    hint: "Internships, traineeships, working-student, graduate, apprenticeship and thesis roles",
+  },
+];
 
 /** "UX Designer, Prod" → head "UX Designer," and tail "Prod". */
 function splitTrailingRole(value: string): { head: string; tail: string } {
@@ -23,10 +34,12 @@ export function SearchForm() {
   const designation = useSearchStore((s) => s.designation);
   const company = useSearchStore((s) => s.company);
   const country = useSearchStore((s) => s.country);
+  const jobType = useSearchStore((s) => s.jobType);
   const status = useSearchStore((s) => s.status);
   const setDesignation = useSearchStore((s) => s.setDesignation);
   const setCompany = useSearchStore((s) => s.setCompany);
   const setCountry = useSearchStore((s) => s.setCountry);
+  const setJobType = useSearchStore((s) => s.setJobType);
   const search = useSearchStore((s) => s.search);
 
   const [open, setOpen] = React.useState(false);
@@ -90,7 +103,7 @@ export function SearchForm() {
         <Input
           id="designation"
           value={designation}
-          placeholder="e.g. UX Designer, Product Designer"
+          placeholder={jobType === "internships" ? "e.g. UX Design, Marketing — or leave blank" : "e.g. UX Designer, Product Designer"}
           autoComplete="off"
           role="combobox"
           aria-expanded={open}
@@ -154,6 +167,39 @@ export function SearchForm() {
         {busy ? <Loader2 className="animate-spin" /> : <Search />}
         {busy ? "Searching…" : "Find Jobs & Contacts"}
       </Button>
+
+      <div className="flex flex-wrap items-center gap-2 md:col-span-2 lg:col-span-4">
+        <span id="job-type-label" className="text-sm font-medium">
+          Show
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby="job-type-label"
+          className="inline-flex flex-wrap rounded-md border border-border bg-background p-0.5"
+        >
+          {JOB_TYPES.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={jobType === option.value}
+              title={option.hint}
+              onClick={() => setJobType(option.value)}
+              className={cn(
+                "rounded-sm px-3 py-1.5 text-sm transition-colors",
+                jobType === option.value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {JOB_TYPES.find((option) => option.value === jobType)?.hint}
+        </span>
+      </div>
     </form>
   );
 }

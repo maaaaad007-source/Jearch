@@ -39,7 +39,6 @@ export function mapJob(job: GreenhouseJob, company: string): JobPost | null {
     id: `greenhouse:${job.id ?? job.absolute_url ?? title}`,
     title,
     companyName: company,
-    companyDomain: null,
     city,
     region,
     workType: workTypeFrom(location, description ?? ""),

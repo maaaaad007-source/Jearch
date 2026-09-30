@@ -19,7 +19,6 @@ const jobSchema = z.object({
   id: z.string(),
   title: z.string(),
   companyName: z.string(),
-  companyDomain: z.string().nullable(),
   city: z.string().nullable(),
   region: z.string().nullable(),
   workType: z.enum(["Remote", "Hybrid", "On-site", "Unknown"]),
@@ -44,8 +43,8 @@ const personSchema = z
     name: z.string(),
     title: z.string().nullable(),
     linkedinUrl: z.string().nullable(),
-    email: z.string().nullable(),
-    emailIsPattern: z.boolean(),
+    // Rows saved before contacts were classified have no kind.
+    kind: z.enum(["Recruiting", "Early careers", "Hiring team", "Leadership"]).nullable().catch(null),
     companyName: z.string().nullable(),
     source: z.string(),
   })

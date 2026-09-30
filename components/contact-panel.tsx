@@ -1,25 +1,35 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ChevronDown, Loader2, Mail, UserSearch } from "lucide-react";
+import { ChevronDown, Loader2, UserSearch } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CopyButton } from "@/components/copy-button";
 import { LinkedInIcon } from "@/components/icons/linkedin";
-import { MailDraftDialog } from "@/components/mail-draft-dialog";
+import { MessageDraftDialog } from "@/components/message-draft-dialog";
 import { cn } from "@/lib/utils";
-import type { JobPost, Person } from "@/types";
+import type { ContactKind, JobPost, Person } from "@/types";
 
 /**
- * Who to contact, ordered by what we can actually stand behind.
+ * Who to contact at the employer, most useful first: the recruiters, the
+ * early-careers team for an internship, and the people the hire would work
+ * for.
  *
- * The LinkedIn profile leads because it was genuinely found — you can open it
- * and see a real person. The email follows and is labelled as constructed
- * whenever it was assembled from a naming convention, because the earlier
- * design showed a guessed address in the same style as a confirmed one and
- * that quietly invited people to mail strangers.
+ * Only LinkedIn profiles are shown. Email addresses built from a
+ * "first.last@domain" pattern used to sit here too, and were wrong often
+ * enough that they are gone — a profile was genuinely found and reaches the
+ * person for certain.
  */
+
+const KIND_STYLE: Record<ContactKind, string> = {
+  Recruiting: "bg-primary/15 text-primary",
+  "Early careers": "bg-[color-mix(in_oklch,var(--success)_18%,transparent)] text-[var(--success)]",
+  "Hiring team": "bg-[color-mix(in_oklch,var(--warning)_20%,transparent)] text-[var(--warning)]",
+  Leadership: "bg-secondary text-secondary-foreground",
+};
+
+/** Beyond the first, how many more to offer. The rest are rarely the right person. */
+const MORE_LIMIT = 5;
 
 interface ContactPanelProps {
   job: JobPost;
@@ -31,7 +41,7 @@ export function ContactPanel({ job, people, loading }: ContactPanelProps) {
   const [showAll, setShowAll] = React.useState(false);
 
   const best = people[0] ?? null;
-  const others = people.slice(1, 4);
+  const others = people.slice(1, 1 + MORE_LIMIT);
 
   if (loading) {
     return (
@@ -49,8 +59,8 @@ export function ContactPanel({ job, people, loading }: ContactPanelProps) {
         <span>
           {/* Trailing dot trimmed: "Booking.com B.V." plus a full stop reads as
               an ellipsis-by-accident. */}
-          No named recruiter found at {job.companyName.replace(/\.+$/, "")}. The posting link still goes
-          straight to their application page.
+          No recruiter or hiring manager found at {job.companyName.replace(/\.+$/, "")}. The posting link
+          still goes straight to their application page.
         </span>
       </div>
     );
@@ -116,39 +126,20 @@ function PersonRow({ person, job, primary = false }: { person: Person; job: JobP
         )}
       </div>
 
-      {person.email ? (
-        <div className="grid grid-cols-1 gap-1.5">
-          <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
-            <Mail className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate font-mono text-xs">{person.email}</span>
-            <CopyButton value={person.email} label="Copy email" />
-          </div>
-
-          {person.emailIsPattern && (
-            <p className="flex items-start gap-1.5 text-xs text-[var(--warning)]">
-              <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-              <span>
-                Built from this company&rsquo;s usual first.last pattern — not confirmed. Worth trying, but
-                LinkedIn is the reliable route.
-              </span>
-            </p>
-          )}
-
-          {primary && (
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <MailDraftDialog job={job} person={person} />
-              <Badge variant="outline" className="font-normal">
-                {person.source}
-              </Badge>
-            </div>
-          )}
-        </div>
-      ) : (
-        primary && (
-          <p className="text-xs text-muted-foreground">
-            No email address found — the LinkedIn profile above is the way in.
-          </p>
-        )
+      {(primary || person.kind) && (
+      <div className="flex flex-wrap items-center gap-2">
+        {person.kind && (
+          <Badge className={cn("border-transparent font-medium", KIND_STYLE[person.kind])}>{person.kind}</Badge>
+        )}
+        {primary && (
+          <>
+            <MessageDraftDialog job={job} person={person} />
+            <Badge variant="outline" className="font-normal">
+              {person.source}
+            </Badge>
+          </>
+        )}
+      </div>
       )}
     </div>
   );

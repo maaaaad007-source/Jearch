@@ -48,7 +48,6 @@ export function mapPosting(posting: LeverPosting, company: string): JobPost | nu
     id: `lever:${posting.id ?? posting.hostedUrl ?? title}`,
     title,
     companyName: company,
-    companyDomain: null,
     city,
     region,
     workType,
