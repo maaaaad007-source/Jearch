@@ -10,9 +10,9 @@ export default function HomePage() {
             Skip the application portal. Reach the person hiring.
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
-            Search live postings by job title, company, or both — several pages of a real jobs database at
-            once — then get the recruiter or hiring lead behind each one, with their LinkedIn profile and,
-            where we can work it out, an email address.
+            Search live jobs and internships by title, company, or both — several pages of a real jobs
+            database at once — then get the recruiters, early-careers team and hiring managers behind each
+            one, with their LinkedIn profiles.
           </p>
         </div>
 

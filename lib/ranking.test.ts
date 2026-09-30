@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { companyTokens, dedupe, matchesCompany, parseRoles, rankJobs, sameCompany, scoreTitle } from "./ranking.ts";
+import {
+  companyTokens,
+  dedupe,
+  isInternship,
+  matchesCompany,
+  parseRoles,
+  rankJobs,
+  sameCompany,
+  scoreTitle,
+} from "./ranking.ts";
 import type { JobPost } from "../types/index.ts";
 
 /**
@@ -16,7 +25,6 @@ function job(overrides: Partial<JobPost> = {}): JobPost {
     id: "test:1",
     title: "UX Designer",
     companyName: "Booking.com B.V.",
-    companyDomain: null,
     city: "Amsterdam",
     region: "Noord-Holland",
     workType: "Hybrid",
@@ -164,4 +172,59 @@ test("a single role search leaves the role badge off", () => {
   const { exact } = rankJobs([job()], { designations: ["UX Designer"], country: "NL" });
 
   assert.equal(exact[0].matchedRole, null, "labelling every card with the only role searched is noise");
+});
+
+test("internships are recognised in all their forms", () => {
+  for (const title of [
+    "UX Design Intern",
+    "Marketing Internship (Summer 2027)",
+    "Graduate Trainee - Finance",
+    "Werkstudent Data Analytics (m/w/d)",
+    "Stagiair Marketing",
+    "Praktikant inom HR",
+    "Software Engineering Apprenticeship",
+    "Summer Analyst, Investment Banking",
+    "Master Thesis: Battery Modelling",
+    "Becario/a de Prácticas en Diseño",
+    "Stage - Chef de projet digital",
+  ]) {
+    assert.ok(isInternship(title), `${title} is an internship`);
+  }
+
+  for (const title of ["UX Designer", "Stage Manager", "Early-stage Startup Founder's Associate", "Internal Auditor"]) {
+    assert.equal(isInternship(title), false, `${title} is not an internship`);
+  }
+});
+
+test("an internship in the searched field matches the role", () => {
+  // The intern is titled by the field, not the job: "design", not "designer".
+  assert.ok(scoreTitle("UX Design Intern", "UX Designer") >= 70);
+  assert.ok(scoreTitle("Software Engineer Intern", "Software Engineering Intern") >= 70);
+  assert.ok(scoreTitle("Marketing Trainee", "Marketing Intern") >= 70);
+  assert.ok(scoreTitle("Werkstudent Marketing", "Internship") >= 70);
+  // ...but only for internships: a design lead is not a designer.
+  assert.ok(scoreTitle("UX Design Lead", "UX Designer") < 70);
+  // A search for internships does not match a regular role.
+  assert.equal(scoreTitle("Marketing Manager", "Internship"), 0);
+});
+
+test("internships are included by default and can be narrowed either way", () => {
+  const jobs = [job({ id: "a", title: "UX Designer" }), job({ id: "b", title: "UX Design Intern" })];
+  const query = { designations: ["UX Designer"], country: "NL" };
+
+  assert.equal(rankJobs(jobs, query).exact.length, 2);
+
+  const onlyInternships = rankJobs(jobs, { ...query, jobType: "internships" as const });
+  assert.deepEqual(onlyInternships.exact.map((entry) => entry.job.id), ["b"]);
+  assert.equal(onlyInternships.excluded.type, 1);
+
+  const noInternships = rankJobs(jobs, { ...query, jobType: "jobs" as const });
+  assert.deepEqual(noInternships.exact.map((entry) => entry.job.id), ["a"]);
+});
+
+test("every internship answers an internships search with no title", () => {
+  const jobs = [job({ id: "a", title: "Finance Intern" }), job({ id: "b", title: "Controller" })];
+  const { exact, close } = rankJobs(jobs, { designations: [], country: "NL", jobType: "internships" });
+
+  assert.deepEqual([...exact, ...close].map((entry) => entry.job.id), ["a"]);
 });

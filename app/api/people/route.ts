@@ -10,10 +10,11 @@ const schema = z.object({
     .array(
       z.object({
         companyName: z.string().trim().min(1).max(160),
-        domain: z.string().trim().max(160).nullable().optional(),
+        role: z.string().trim().max(160).nullable().optional(),
+        internship: z.boolean().optional(),
       }),
     )
-    // One search per company, so the batch is capped to keep credits sane.
+    // Two searches per company, so the batch is capped to keep credits sane.
     .min(1)
     .max(12),
 });
@@ -26,7 +27,11 @@ export async function POST(request: Request) {
   }
 
   const { peopleByCompany, error } = await findPeople(
-    parsed.data.companies.map((entry) => ({ companyName: entry.companyName, domain: entry.domain ?? null })),
+    parsed.data.companies.map((entry) => ({
+      companyName: entry.companyName,
+      role: entry.role ?? null,
+      internship: entry.internship ?? false,
+    })),
     request.signal,
   );
 

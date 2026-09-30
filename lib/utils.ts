@@ -69,24 +69,6 @@ export function formatSalary(
   return `${amount}${suffix}`;
 }
 
-/**
- * Best-effort domain extraction. Enrichment providers key off the company
- * domain, so a bad guess here is worse than no guess — we only accept things
- * that already look like hostnames or URLs.
- */
-export function normalizeDomain(input: string | null | undefined): string | null {
-  if (!input) return null;
-  let value = input.trim().toLowerCase();
-  if (!value) return null;
-
-  if (value.includes("@")) value = value.split("@").pop() ?? "";
-  value = value.replace(/^https?:\/\//, "").replace(/^www\./, "");
-  value = value.split("/")[0].split("?")[0].split(":")[0];
-
-  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(value)) return null;
-  return value;
-}
-
 export function titleCase(value: string): string {
   return value
     .toLowerCase()

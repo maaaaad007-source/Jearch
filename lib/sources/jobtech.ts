@@ -1,7 +1,6 @@
 import type { JobPost, SearchParams, WorkType } from "@/types";
 import { config } from "@/lib/config";
 import { summarizeResponsibilities } from "@/lib/text";
-import { normalizeDomain } from "@/lib/utils";
 import { describeHttpFailure, SourceError, type JobSource } from "@/lib/sources/types";
 
 /**
@@ -25,7 +24,7 @@ interface JobTechHit {
     city?: string | null;
   } | null;
   description?: { text?: string | null } | null;
-  application_details?: { url?: string | null; email?: string | null } | null;
+  application_details?: { url?: string | null } | null;
   webpage_url?: string | null;
   publication_date?: string | null;
   application_deadline?: string | null;
@@ -41,21 +40,6 @@ function toWorkType(hit: JobTechHit): WorkType {
   if (/\b(distans|remote)\b/.test(haystack)) return "Remote";
   if (hit.workplace_address?.municipality) return "On-site";
   return "Unknown";
-}
-
-/**
- * The employer's real domain, when the ad reveals one.
- *
- * Swedish ads often carry an application address at the employer's own domain,
- * which beats any guess — and it is the difference between a verified contact
- * email and a constructed one.
- */
-function employerDomain(hit: JobTechHit): string | null {
-  return (
-    normalizeDomain(hit.application_details?.email) ??
-    normalizeDomain(hit.employer?.url) ??
-    normalizeDomain(hit.application_details?.url)
-  );
 }
 
 export function mapHit(hit: JobTechHit): JobPost | null {
@@ -75,7 +59,6 @@ export function mapHit(hit: JobTechHit): JobPost | null {
     id: `jobtech:${hit.id ?? hit.webpage_url ?? title}`,
     title,
     companyName: hit.employer?.name?.trim() || hit.employer?.workplace?.trim() || "Unknown company",
-    companyDomain: employerDomain(hit),
     city: address?.municipality ?? address?.city ?? null,
     region: address?.region ?? null,
     workType: toWorkType(hit),
@@ -117,7 +100,12 @@ export const jobtech: JobSource = {
   },
 
   async fetchPage(params: SearchParams, page: number, signal?: AbortSignal) {
-    const query = [params.designation, params.company].filter(Boolean).join(" ").trim();
+    // "Praktik" is how Swedish ads say internship; Platsbanken's own synonym
+    // handling widens it to praktikant, praktikplats and the like.
+    const query = [params.designation, params.company, params.internship && "praktik"]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
 
     const url = new URL(config.jobtechEndpoint || DEFAULT_ENDPOINT);
     if (query) url.searchParams.set("q", query);

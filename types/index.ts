@@ -23,7 +23,6 @@ export interface JobPost {
   id: string;
   title: string;
   companyName: string;
-  companyDomain: string | null;
   city: string | null;
   region: string | null;
   workType: WorkType;
@@ -67,20 +66,30 @@ export interface RankedJob {
 }
 
 /**
+ * Why a person is worth contacting about a posting.
+ *
+ * - `Recruiting`: recruiters, talent acquisition, people partners
+ * - `Early careers`: university, campus and graduate recruiters — the people
+ *   who actually run internship hiring
+ * - `Hiring team`: a manager or lead in the discipline the posting is for
+ * - `Leadership`: founders, heads of and directors, useful at small employers
+ */
+export type ContactKind = "Recruiting" | "Early careers" | "Hiring team" | "Leadership";
+
+/**
  * A person worth contacting at the hiring company.
  *
- * `email` is deliberately nullable and separate from `emailIsPattern`: a
- * constructed address is a guess, and presenting a guess with the confidence of
- * a fact is how you end up mailing a stranger.
+ * There is deliberately no email address here. Addresses assembled from a
+ * "first.last@domain" convention were wrong often enough to do more harm than
+ * good, so the LinkedIn profile — which was genuinely found — is the one way in.
  */
 export interface Person {
   id: string;
   name: string;
   title: string | null;
   linkedinUrl: string | null;
-  email: string | null;
-  /** True when the address was assembled from a naming convention, not found. */
-  emailIsPattern: boolean;
+  /** Null when the headline does not say, e.g. a profile with no title. */
+  kind: ContactKind | null;
   companyName: string | null;
   source: string;
 }
@@ -98,7 +107,20 @@ export interface SearchParams {
   /** ISO 3166-1 alpha-2 country code. */
   country: string;
   company?: string;
+  /**
+   * Ask for internships specifically — traineeships, working-student roles,
+   * graduate programmes and the like. Each source says so in its own terms.
+   */
+  internship?: boolean;
 }
+
+/**
+ * Which kinds of opening a search covers.
+ *
+ * `all` is the default and includes internships alongside regular roles;
+ * the other two narrow to one or the other.
+ */
+export type JobType = "all" | "jobs" | "internships";
 
 /**
  * What the user asked for, which may be several roles at once.
@@ -111,6 +133,8 @@ export interface SearchQuery {
   designations: string[];
   country: string;
   company?: string;
+  /** Defaults to `all`. */
+  jobType?: JobType;
 }
 
 /** What a source could not do, in words meant for the person searching. */
@@ -130,7 +154,7 @@ export interface SearchResponse {
   /** Employers the search did turn up — names the company filter rejected. */
   employersFound: string[];
   /** Why postings were set aside, so an empty result can explain itself. */
-  excluded: { company: number; stale: number; title: number };
+  excluded: { company: number; stale: number; title: number; type: number };
   /** Every source consulted, whether or not it produced anything. */
   sources: SourceReport[];
   /** Total postings examined before ranking — the honest denominator. */

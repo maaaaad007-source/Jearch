@@ -68,8 +68,18 @@ export function ResultsGrid() {
   // capped or de-duplicated list cannot claim more than it looked for.
   const roleLabel =
     roles.length > 0 ? roles.map((role) => `“${role}”`).join(" or ") : searched?.designation ? `“${searched.designation}”` : "";
+  const what =
+    searched?.jobType === "internships"
+      ? [roleLabel, "internships"].filter(Boolean).join(" ")
+      : searched?.jobType === "jobs"
+        ? `${roleLabel} (no internships)`.trim()
+        : roleLabel;
   const label = searched
-    ? [roleLabel, searched.company && `at ${searched.company}`, `in ${countryName(searched.country) ?? searched.country}`]
+    ? [
+        what,
+        searched.company && `at ${searched.company}`,
+        `in ${countryName(searched.country) ?? searched.country}`,
+      ]
         .filter(Boolean)
         .join(" ")
     : "";
@@ -172,7 +182,7 @@ function EmptyExplanation({
 }: {
   label: string;
   examined: number;
-  excluded: { company: number; stale: number; title: number };
+  excluded: { company: number; stale: number; title: number; type: number };
   company: string;
   employers: string[];
 }) {
@@ -199,6 +209,7 @@ function EmptyExplanation({
   const reasons = [
     excluded.title > 0 && `${excluded.title} were a different role`,
     excluded.stale > 0 && `${excluded.stale} were older than 90 days`,
+    excluded.type > 0 && `${excluded.type} were the wrong kind (internship or not) for this search`,
   ].filter(Boolean);
 
   return (
@@ -253,7 +264,7 @@ function EmptyState() {
         <p className="font-medium">Search a job title and country to begin.</p>
         <p className="mx-auto max-w-md text-sm text-muted-foreground">
           Postings come from Adzuna and, for Sweden, Platsbanken — real job databases, several pages at a
-          time. Contacts come from LinkedIn via Serper.
+          time — internships included. Contacts are the recruiters and hiring team, from LinkedIn via Serper.
         </p>
       </div>
       <Button asChild variant="ghost" size="sm">

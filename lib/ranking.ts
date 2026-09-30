@@ -1,4 +1,4 @@
-import type { JobPost, MatchQuality, RankedJob, SearchQuery } from "@/types";
+import type { JobPost, JobType, MatchQuality, RankedJob, SearchQuery } from "@/types";
 
 /**
  * Turning a pile of postings into an ordered answer.
@@ -52,6 +52,95 @@ export function parseRoles(input: string): string[] {
   return unique.slice(0, MAX_ROLES);
 }
 
+/**
+ * What an internship is called, in the languages the sources cover.
+ *
+ * "All kinds" is the point: an internship is as often advertised as a
+ * traineeship, a working-student role, a graduate programme, an apprenticeship
+ * or a thesis project, and a search that only knew the word "intern" would
+ * miss most of them. Matched against the title only — a description that
+ * mentions "our intern programme" does not make a senior role an internship.
+ * Text is accent-folded before matching, so "prácticas" is written "practicas".
+ */
+const INTERNSHIP_PATTERN = new RegExp(
+  [
+    "interns?", "internships?", "trainees?", "traineeships?", "apprentices?", "apprenticeships?",
+    "working students?", "student (assistant|worker|job|researcher|developer|engineer)s?",
+    "graduates?", "graduate (programme|program|scheme|trainee)s?", "grad (programme|program|scheme)s?",
+    "summer (analyst|associate|intern|student)s?", "placement (student|year)s?", "industrial placements?",
+    "year in industry", "co-op", "thesis", "master'?s? thesis", "bachelor'?s? thesis",
+    // Dutch, German, French, Swedish, Spanish, Italian, Portuguese, Polish
+    "stagiair(e|es|s)?", "stagelopers?", "afstudeer\\w*", "werkstudent(in|en)?", "praktikant(in|en)?",
+    "praktikum", "abschlussarbeit", "masterarbeit", "stage", "alternance", "alternant(e)?", "praktik",
+    "examensarbete", "exjobb", "studentmedarbetare", "becari[oa]s?", "practicas", "stagista", "tirocinio",
+    "estagio", "estagiari[oa]s?", "staz(ysta)?", "praktyk[ai]",
+  ]
+    .map((term) => `\\b${term}\\b`)
+    .join("|"),
+  "i",
+);
+
+/** Words that describe the internship itself rather than the discipline. */
+const INTERNSHIP_WORDS = new Set([
+  "intern", "interns", "internship", "internships", "trainee", "traineeship", "apprentice",
+  "apprenticeship", "graduate", "working", "student", "werkstudent", "stagiair", "stagiaire",
+  "praktikant", "praktikum", "praktik", "stage", "thesis", "placement", "summer", "programme", "program",
+]);
+
+function foldAccents(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/**
+ * Is this posting an internship of some kind?
+ *
+ * "Stage" is French and Dutch for internship but English for a platform, so
+ * "Stage Manager" and "early-stage" are not counted.
+ */
+export function isInternship(title: string): boolean {
+  const folded = foldAccents(title).toLowerCase().replace(/\b(early|late|growth|seed)[- ]stage\b|\bstage (manager|technician|hand|crew)\b/g, "");
+  return INTERNSHIP_PATTERN.test(folded);
+}
+
+/** Does this posting belong in a search limited to `type`? */
+export function matchesJobType(job: JobPost, type: JobType = "all"): boolean {
+  if (type === "all") return true;
+  return isInternship(job.title) === (type === "internships");
+}
+
+/**
+ * The discipline an internship is named by.
+ *
+ * A "UX Designer" search should find the "UX Design Intern", but the intern
+ * is titled by the field, not the job — "design", "engineering", "marketing".
+ * Only used for internships: for a regular role, "UX Design Lead" is a
+ * different job from "UX Designer" and should not become an exact match.
+ */
+const DISCIPLINE: Record<string, string[]> = {
+  designer: ["design"],
+  developer: ["development", "develop"],
+  engineer: ["engineering"],
+  analyst: ["analytics", "analysis"],
+  scientist: ["science"],
+  marketer: ["marketing"],
+  manager: ["management"],
+  researcher: ["research"],
+  accountant: ["accounting", "accountancy"],
+  recruiter: ["recruiting", "recruitment"],
+  writer: ["writing"],
+  consultant: ["consulting", "consultancy"],
+  architect: ["architecture"],
+  economist: ["economics"],
+  lawyer: ["legal", "law"],
+  counsel: ["legal"],
+};
+
+/** And back again: a "Software Engineering Intern" search finds the "Software Engineer Intern". */
+const DISCIPLINE_OF: Record<string, string[]> = {};
+for (const [role, fields] of Object.entries(DISCIPLINE)) {
+  for (const field of fields) (DISCIPLINE_OF[field] ??= []).push(role);
+}
+
 /** Words employers use interchangeably in titles. */
 const SYNONYMS: Record<string, string[]> = {
   ux: ["user experience"],
@@ -86,9 +175,12 @@ function significant(text: string): string[] {
   return words(text).filter((word) => word.length >= 2 && !IGNORABLE.has(word));
 }
 
-function contains(haystack: string, word: string): boolean {
+function contains(haystack: string, word: string, internship = false): boolean {
   if (haystack.includes(word)) return true;
-  return (SYNONYMS[word] ?? []).some((synonym) => haystack.includes(synonym));
+  if ((SYNONYMS[word] ?? []).some((synonym) => haystack.includes(synonym))) return true;
+
+  if (!internship) return false;
+  return [...(DISCIPLINE[word] ?? []), ...(DISCIPLINE_OF[word] ?? [])].some((form) => haystack.includes(form));
 }
 
 const LEGAL_SUFFIX =
@@ -176,10 +268,20 @@ export function scoreTitle(title: string, designation: string): number {
   if (haystack === wanted) return 100;
   if (haystack.includes(wanted)) return 90;
 
-  const needed = significant(wanted);
+  const internship = isInternship(title);
+  let needed = significant(wanted);
   if (needed.length === 0) return 60;
 
-  const matched = needed.filter((word) => contains(haystack, word));
+  // For an internship, "intern", "trainee" and friends in the search are
+  // answered by the posting being an internship at all — "Marketing Intern"
+  // is answered by a "Marketing Trainee" — and a search for just "Internship"
+  // is answered by every one of them.
+  if (internship) {
+    needed = needed.filter((word) => !INTERNSHIP_WORDS.has(word));
+    if (needed.length === 0) return 80;
+  }
+
+  const matched = needed.filter((word) => contains(haystack, word, internship));
   if (matched.length === needed.length) return 80;
 
   // A partial title match is what "close" is made of: "Product Designer" for a
@@ -206,7 +308,7 @@ export interface RankedResults {
   elsewhere: RankedJob[];
   /** Why postings were set aside — the difference between "no such job" and
    * "wrong company name", which is invisible from a count of zero. */
-  excluded: { company: number; stale: number; title: number };
+  excluded: { company: number; stale: number; title: number; type: number };
 }
 
 /** Enough to prove the role exists elsewhere, without burying the answer. */
@@ -256,12 +358,19 @@ export function rankJobs(jobs: JobPost[], query: SearchQuery, options: RankOptio
   const exact: RankedJob[] = [];
   const close: RankedJob[] = [];
   const elsewhere: RankedJob[] = [];
-  const excluded = { company: 0, stale: 0, title: 0 };
+  const excluded = { company: 0, stale: 0, title: 0, type: 0 };
 
   for (const job of jobs) {
     const age = ageInDays(job.postedAt);
     if (age !== null && age > maxAge) {
       excluded.stale += 1;
+      continue;
+    }
+
+    // "Internships only" and "no internships" are promises, like the company
+    // filter, so they exclude rather than demote.
+    if (!matchesJobType(job, query.jobType)) {
+      excluded.type += 1;
       continue;
     }
 
